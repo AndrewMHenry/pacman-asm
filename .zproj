@@ -1,0 +1,16 @@
+: main-file main.asm
+: entry-point main
+: library
+  interrupt.asm
+  keyboard.asm
+  timer.asm
+  screen.asm draw.asm write.asm
+  titleScreen.asm
+  board.asm
+  level.asm
+  game.asm
+  pacmanImage.asm
+: resource fontFBF.asm
+
+: app-name Pacman
+: app-file pacman-app.asm
