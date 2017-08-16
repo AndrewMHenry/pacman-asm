@@ -156,26 +156,26 @@ boardDeploy:
 ;;; Whether a given sprite can be moved in a given direction depends on at
 ;;; least the location of the sprite and the layout of the board.  Therefore,
 ;;; we must supply some way of determining whether a given movement is
-;;; allowed.  To this end, for each direction (up, down, left, or right) in
-;;; which a sprite may move, we supply two routines, which both expect ACC to
-;;; contain the index of the sprite in question:
+;;; allowed.  To this end, we supply two routines, which both expect ACC to
+;;; contain the index of the sprite in question and D to contain the direction
+;;; in which the sprite is to move:
 ;;;
-;;;     (1) boardCheckMoveSprite<Direction>: This routine returns
-;;;         with the carry flag RESET if and only if the movement is allowed.
+;;;     (1) boardCheckMoveSprite: This routine returns with the carry flag
+;;;         RESET if and only if the specified movement is allowed.
 ;;;
-;;;     (2) boardMoveSprite<Direction>: This routine ASSUMES that the requested
-;;;         movement is allowed and carries it out.
+;;;     (2) boardMoveSprite: This routine ASSUMES that the requested movement
+;;;         is allowed and carries it out.
 ;;;
 ;;; It is important to note that the only way guaranteed by the interface of
-;;; ensuring that a given movement is allowed is to use the corresponding
-;;; boardCheckMoveSprite<Direction> routine.  For example, if C contains the
-;;; index of a sprite to be moved to the right, the following sequence of
-;;; instructions safely carries out the movement only if it is allowed:
+;;; ensuring that a given movement is allowed is to use boardCheckMoveSprite.
+;;; For example, if C contains the index of a sprite to be moved in the
+;;; direction specified by D, the following sequence of instructions safely
+;;; carries out the movement only if it is allowed:
 ;;;
-;;;     LD      A, C                       ; ACC = sprite index
-;;;     CALL    boardCheckMoveSpriteRight  ; RESET carry iff movement allowed
-;;;     LD      A, C                       ; ACC = sprite index (again)
-;;;     CALL    NC, boardMoveSpriteRight   ; move ONLY IF ALLOWED
+;;;     LD      A, C                  ; ACC = sprite index
+;;;     CALL    boardCheckMoveSprite  ; RESET carry iff movement allowed
+;;;     LD      A, C                  ; ACC = sprite index (again)
+;;;     CALL    NC, boardMoveSprite   ; move ONLY IF ALLOWED
 ;;;
 
 boardCheckMoveSprite:
@@ -217,91 +217,6 @@ boardMoveSprite:
         LD      (IX+BOARD_SPRITE_ROW), D
         POP     IX
         POP     DE
-        RET
-
-boardMoveDirection:
-        ;; INPUT:
-        ;;   ACC -- direction
-        ;;   D -- row
-        ;;   E -- column
-        ;;
-        ;; OUTPUT:
-        ;;   D -- new row
-        ;;   E -- new column
-        ;;
-        PUSH    HL
-        LD      HL, boardMoveDirection_dispatch
-        ADD     A, A
-        ADD     A, L
-        LD      L, A
-        LD      A, H
-        ADC     A, 0
-        LD      H, A
-        CALL    boardMoveDirection_jumpHL
-        POP     HL
-        RET
-        ;;
-boardMoveDirection_jumpHL:
-        JP      (HL)
-        ;;
-boardMoveDirection_dispatch:
-        DEC     D
-        RET
-        INC     E
-        RET
-        INC     D
-        RET
-        DEC     E
-        RET
-
-boardCheckLocationSpritely:
-        ;; INPUT:
-        ;;   D -- pixel-wise row of sprite
-        ;;   E -- pixel-wise column of sprite
-        ;;   <board data> -- determines board layout
-        ;;
-        ;; OUTPUT:
-        ;;   <carry flag> -- RESET if and only if location is valid
-        ;;
-        PUSH    DE
-        CALL    boardCheckLocationSpritely_checkWall
-        JR      C, boardCheckLocationSpritely_return
-        LD      A, E
-        ADD     A, BOARD_CELL_SIDE - 1
-        LD      E, A
-        CALL    boardCheckLocationSpritely_checkWall
-        JR      C, boardCheckLocationSpritely_return
-        LD      A, D
-        ADD     A, BOARD_CELL_SIDE - 1
-        LD      D, A
-        CALL    boardCheckLocationSpritely_checkWall
-        JR      C, boardCheckLocationSpritely_return
-        LD      A, E
-        SUB     BOARD_CELL_SIDE - 1
-        LD      E, A
-        CALL    boardCheckLocationSpritely_checkWall
-boardCheckLocationSpritely_return:
-        POP     DE
-        RET
-        ;;
-boardCheckLocationSpritely_checkWall:
-        ;; INPUT:
-        ;;   D -- pixel-wise row
-        ;;   E -- pixel-wise column
-        ;;   <board data> -- determines wall layout
-        ;;
-        ;; OUTPUT:
-        ;;   <carry flag> -- set iff cell at location is wall
-        ;;
-        PUSH    BC
-        PUSH    DE
-        CALL    boardExtractLocationData
-        CALL    boardGetCellAddress
-        LD      A, (HL)
-        SUB     BOARD_CELL_WALL
-        SUB     1
-        POP     DE
-        POP     BC
         RET
 
 ;;; SPRITE INTERACTION.........................................................
@@ -367,31 +282,6 @@ boardIter_columnLoop:                  ;
         ;;
 boardIter_jumpHL:                      ; subroutine to implement `CALL (HL)`
         JP      (HL)                   ;
-
-boardSpriteFootprintIter:
-        ;; INPUT:
-        ;;   D -- pixel-wise row of sprite
-        ;;   E -- pixel-wise column of sprite
-        ;;   HL -- start of callback to apply to each cell
-        ;;
-        ;; OUTPUT:
-        ;;   <board data> -- callback applied to each cell in footprint
-        ;;
-        PUSH    BC
-        PUSH    DE
-        CALL    boardExtractLocationData
-        CALL    boardSpriteFootprintIter_jumpHL
-        INC     E
-        LD      A, C
-        OR      A
-        CALL    NZ, boardSpriteFootprintIter_jumpHL
-        
-        POP     DE
-        POP     BC
-        RET
-        ;;
-boardSpriteFootprintIter_jumpHL:
-        JP      (HL)
 
 boardDrawCell:
         ;; INPUT:
@@ -488,10 +378,10 @@ boardDivideCellSide:
         ;;   B -- value // cell side
         ;;
         LD      B, -1
-boardModCellSide_loop:
+boardDivideCellSide_loop:
         INC     B
         SUB     BOARD_CELL_SIDE
-        JR      NC, boardModCellSide_loop
+        JR      NC, boardDivideCellSide_loop
         ADD     A, BOARD_CELL_SIDE
         RET
 
@@ -510,38 +400,25 @@ boardSpriteIter:
         OR      A                       ; return if sprite count == 0
         RET     Z                       ;
         PUSH    BC                      ; STACK: [PC BC]
+        PUSH    DE                      ; STACK: [PC BC DE]
+        PUSH    IX                      ; STACK: [PC BC DE IX]
         LD      B, A                    ; B (counter) = sprite count
         LD      C, 0                    ; C (sprite index) = 0
+        LD      DE, BOARD_SPRITE_SIZE   ;
+        LD      IX, boardSprites        ;
 boardSpriteIter_loop:                   ;
         LD      A, C                    ; ACC = sprite index
         CALL    boardSpriteIter_jumpHL  ; call the callback routine
         INC     C                       ; advance sprite index
+        ADD     IX, DE                  ; advance sprite pointer
         DJNZ    boardSpriteIter_loop    ; repeat for each sprite index
+        POP     IX                      ; STACK: [PC BC DE]
+        POP     DE                      ; STACK: [PC BC]
         POP     BC                      ; STACK: [PC]
         RET                             ; return
         ;;
 boardSpriteIter_jumpHL:
         JP      (HL)
-
-boardGetSpritePointer:
-        ;; INPUT:
-        ;;   ACC -- sprite ID
-        ;;
-        ;; OUTPUT:
-        ;;   IX -- base of data for sprite
-        ;;
-        ;; ASSUMPTIONS:
-        ;;   - Each sprite has four bytes of data.
-        ;;
-        PUSH    DE
-        ADD     A, A
-        ADD     A, A
-        LD      E, A
-        LD      D, 0
-        LD      IX, boardSprites
-        ADD     IX, DE
-        POP     DE
-        RET
 
 boardDrawSprite:
         ;; INPUT:
@@ -554,19 +431,36 @@ boardDrawSprite:
         PUSH    BC                              ; STACK: [PC BC]
         PUSH    DE                              ; STACK: [PC BC DE]
         PUSH    HL                              ; STACK: [PC BC DE HL]
-        PUSH    IX                              ; STACK: [PC BC DE HL IX]
-        CALL    boardGetSpritePointer           ;
         LD      B, BOARD_SPRITE_HEIGHT          ; B = sprite height
         LD      E, (IX+BOARD_SPRITE_COLUMN)     ; E = column
         LD      D, (IX+BOARD_SPRITE_ROW)        ; D = row
         LD      L, (IX+BOARD_SPRITE_PICTURE+0)  ; HL = picture
         LD      H, (IX+BOARD_SPRITE_PICTURE+1)  ;
         CALL    drawPicture                     ; draw the picture
-        POP     IX                              ; STACK: [PC BC DE HL]
         POP     HL                              ; STACK: [PC BC DE]
         POP     DE                              ; STACK: [PC BC]
         POP     BC                              ; STACK: [PC]
         RET                                     ; return
+
+boardGetSpritePointer:
+        ;; INPUT:
+        ;;   ACC -- sprite ID
+        ;;
+        ;; OUTPUT:
+        ;;   IX -- base of data for sprite
+        ;;
+        ;; ASSUMPTIONS:
+        ;;   - Each sprite has four bytes of data.
+        ;;
+        PUSH    DE                ; STACK: [PC DE]
+        ADD     A, A              ; DE = ID * 4 (size of sprite data)
+        ADD     A, A              ;
+        LD      E, A              ;
+        LD      D, 0              ;
+        LD      IX, boardSprites  ; IX = boardSprites + DE
+        ADD     IX, DE            ;
+        POP     DE                ; STACK: [PC]
+        RET                       ; return
 
 boardGetSpriteLocationData:
         ;; INPUT:
@@ -616,6 +510,91 @@ boardExtractLocationData:
         LD      B, A
         RET
 
+boardMoveDirection:
+        ;; INPUT:
+        ;;   ACC -- direction
+        ;;   D -- row
+        ;;   E -- column
+        ;;
+        ;; OUTPUT:
+        ;;   D -- new row
+        ;;   E -- new column
+        ;;
+        PUSH    HL
+        LD      HL, boardMoveDirection_dispatch
+        ADD     A, A
+        ADD     A, L
+        LD      L, A
+        LD      A, H
+        ADC     A, 0
+        LD      H, A
+        CALL    boardMoveDirection_jumpHL
+        POP     HL
+        RET
+        ;;
+boardMoveDirection_jumpHL:
+        JP      (HL)
+        ;;
+boardMoveDirection_dispatch:
+        DEC     D
+        RET
+        INC     E
+        RET
+        INC     D
+        RET
+        DEC     E
+        RET
+
+boardCheckLocationSpritely:
+        ;; INPUT:
+        ;;   D -- pixel-wise row of sprite
+        ;;   E -- pixel-wise column of sprite
+        ;;   <board data> -- determines board layout
+        ;;
+        ;; OUTPUT:
+        ;;   <carry flag> -- RESET if and only if location is valid
+        ;;
+        PUSH    DE                                   ; STACK: [PC DE]
+        CALL    boardCheckWall                       ; FALSE if wall
+        JR      C, boardCheckLocationSpritely_return ;
+        LD      A, E                                 ; to top right 
+        ADD     A, BOARD_CELL_SIDE - 1               ;
+        LD      E, A                                 ;
+        CALL    boardCheckWall                       ; FALSE if wall
+        JR      C, boardCheckLocationSpritely_return ;
+        LD      A, D                                 ; to bottom right
+        ADD     A, BOARD_CELL_SIDE - 1               ;
+        LD      D, A                                 ;
+        CALL    boardCheckWall                       ; FALSE if wall
+        JR      C, boardCheckLocationSpritely_return ;
+        LD      A, E                                 ; to bottom left
+        SUB     BOARD_CELL_SIDE - 1                  ;
+        LD      E, A                                 ;
+        CALL    boardCheckWall                       ; FALSE if wall
+boardCheckLocationSpritely_return:                   ;
+        POP     DE                                   ; STACK: [PC]
+        RET                                          ; return
+
+boardCheckWall:
+        ;; INPUT:
+        ;;   D -- pixel-wise row
+        ;;   E -- pixel-wise column
+        ;;   <board data> -- determines wall layout
+        ;;
+        ;; OUTPUT:
+        ;;   <carry flag> -- set iff cell at location is wall
+        ;;
+        PUSH    BC                        ; STACK: [PC BC]
+        PUSH    DE                        ; STACK: [PC BC DE]
+        CALL    boardExtractLocationData  ; get cell and offsets
+        CALL    boardGetCellAddress       ; HL = cell address
+        LD      A, (HL)                   ; set carry iff cell is wall
+        SUB     BOARD_CELL_WALL           ;
+        SUB     1                         ;
+        POP     DE                        ; STACK: [PC BC]
+        POP     BC                        ; STACK: [PC]
+        RET                               ; return
+
 ;;;============================================================================
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////
 ;;;============================================================================
@@ -654,7 +633,8 @@ boardExtractLocationData:
 
 #define BOARD_ARRAY_SIZE        BOARD_NUM_ROWS * BOARD_NUM_COLUMNS
 #define BOARD_SPRITE_COUNT_SIZE 1
-#define BOARD_SPRITES_SIZE      5 * (1 + 1 + 2)
+#define BOARD_SPRITE_SIZE       1 + 1 + 2
+#define BOARD_SPRITES_SIZE      5 * BOARD_SPRITE_SIZE
 
 #define BOARD_SPRITE_COLUMN     0
 #define BOARD_SPRITE_ROW        1
@@ -706,231 +686,3 @@ boardInit:
 
 boardExit:
         RET
-
-;;;
-
-
-;;                 PUSH    DE
-;;         PUSH    HL
-;;         LD      E, D
-;;         LD      D, 0
-;;         LD      HL, boardCheckMoveSprite_dispatch
-;;         ADD     HL, DE
-;;         ADD     HL, DE
-;;         LD      E, A
-;;         LD      A, (HL)
-;;         INC     HL
-;;         LD      H, (HL)
-;;         LD      L, A
-;;         LD      A, E
-;;         CALL    boardCheckMoveSprite_jumpHL
-;;         POP     HL
-;;         POP     DE
-;;         RET
-;;         ;;
-;; boardCheckMoveSprite_jumpHL:
-;;         JP      (HL)
-;;         ;;
-;; boardCheckMoveSprite_dispatch:
-;;         .dw     boardCheckMoveSpriteUp
-;;         .dw     boardCheckMoveSpriteRight
-;;         .dw     boardCheckMoveSpriteDown
-;;         .dw     boardCheckMoveSpriteLeft
-
-;;         PUSH    BC
-;;         PUSH    DE
-;;         PUSH    HL
-;;         CALL    boardExtractLocationData
-;;         CALL    boardGetCellAddress
-;;         LD      A, (HL)
-;;         SUB     BOARD_CELL_WALL
-;;         SUB     1
-;;         ;;
-;; ;;         CALL    boardExtractLocationData
-;; ;;         CALL    boardCheckLocationSpritely_UL
-;; ;;         JR      C, boardCheckLocationSpritely_return
-;; ;;         CALL    boardCheckLocationSpritely_UR
-;; ;;         JR      C, boardCheckLocationSpritely_return
-;; ;;         CALL    boardCheckLocationSpritely_DR
-;; ;;         JR      C, boardCheckLocationSpritely_return
-;; ;;         CALL    boardCheckLocationSpritely_DL
-;; ;; boardCheckLocationSpritely_return:
-;;         POP     HL
-;;         POP     DE
-;;         POP     BC
-;;         RET
-;;         ;;
-;; boardCheckLocationSpritely_UL:
-;;         CALL    boardGetCellAddress
-;;         LD      A, (HL)
-;;         CP      BOARD_CELL_WALL
-;;         SCF
-;;         RET     Z
-;;         OR      A
-;;         RET
-;;         ;;
-;; boardCheckLocationSpritely_UR:
-;;         LD      A, C
-;;         OR      A
-;;         RET     Z
-;;         INC     E
-;;         CALL    boardGetCellAddress
-;;         DEC     E
-;;         LD      A, (HL)
-;;         CP      BOARD_CELL_WALL
-;;         SCF
-;;         ;; JR      Z, boardCheckLocationSpritely_return
-;; boardCheckLocationSpritely_DR:
-;;         RET
-;;         ;;
-;;         PUSH    DE
-;;         PUSH    HL
-;;         LD      E, D
-;;         LD      D, 0
-;;         LD      HL, boardMoveSprite_dispatch
-;;         ADD     HL, DE
-;;         ADD     HL, DE
-;;         LD      E, A
-;;         LD      A, (HL)
-;;         INC     HL
-;;         LD      H, (HL)
-;;         LD      L, A
-;;         LD      A, E
-;;         CALL    boardMoveSprite_jumpHL
-;;         POP     HL
-;;         POP     DE
-;;         RET
-;;         ;;
-;; boardMoveSprite_jumpHL:
-;;         JP      (HL)
-;;         ;;
-;; boardMoveSprite_dispatch:
-;;         .dw     boardMoveSpriteUp
-;;         .dw     boardMoveSpriteRight
-;;         .dw     boardMoveSpriteDown
-;;         .dw     boardMoveSpriteLeft
-
-;; boardMoveSpriteUp:
-;;         PUSH    IX
-;;         CALL    boardGetSpritePointer
-;;         DEC     (IX+BOARD_SPRITE_ROW)
-;;         POP     IX
-;;         RET
-
-;; boardMoveSpriteRight:
-;;         PUSH    IX
-;;         CALL    boardGetSpritePointer
-;;         INC     (IX+BOARD_SPRITE_COLUMN)
-;;         POP     IX
-;;         RET
-
-;; boardMoveSpriteDown:
-;;         PUSH    IX
-;;         CALL    boardGetSpritePointer
-;;         INC     (IX+BOARD_SPRITE_ROW)
-;;         POP     IX
-;;         RET
-
-;; boardMoveSpriteLeft:
-;;         PUSH    IX
-;;         CALL    boardGetSpritePointer
-;;         DEC     (IX+BOARD_SPRITE_COLUMN)
-;;         POP     IX
-;;         RET
-
-;; boardCheckMoveSpriteUp:
-;;         PUSH    BC                                ; STACK: [PC BC]
-;;         PUSH    DE                                ; STACK: [PC BC DE]
-;;         PUSH    HL                                ; STACK: [PC BC DE HL]
-;;         CALL    boardGetSpriteLocationData        ; get cell and offsets
-;;         LD      A, C                              ; if misaligned column:
-;;         OR      A                                 ;
-;;         SCF                                       ;     return FALSE
-;;         JR      NZ, boardCheckMoveSpriteUp_return ;
-;;         LD      A, B                              ; if misaligned row:
-;;         OR      A                                 ;
-;;         JR      NZ, boardCheckMoveSpriteUp_return ;     return TRUE
-;;         DEC     D                                 ; if cell above wall:
-;;         CALL    boardGetCellAddress               ;
-;;         LD      A, BOARD_CELL_WALL - 1            ;     return FALSE
-;;         SUB     (HL)                              ;
-;;         ADD     A, 1                              ;
-;; boardCheckMoveSpriteUp_return:                    ;
-;;         POP     HL                                ; STACK: [PC BC DE]
-;;         POP     DE                                ; STACK: [PC BC]
-;;         POP     BC                                ; STACK: [PC]
-;;         RET                                       ; return
-
-;; boardCheckMoveSpriteRight:
-;;         PUSH    BC                                   ; STACK: [PC BC]
-;;         PUSH    DE                                   ; STACK: [PC BC DE]
-;;         PUSH    HL                                   ; STACK: [PC BC DE HL]
-;;         CALL    boardGetSpriteLocationData           ; get cell and offsets
-;;         LD      A, B                                 ; if misaligned row:
-;;         OR      A                                    ;
-;;         SCF                                          ;     return FALSE
-;;         JR      NZ, boardCheckMoveSpriteRight_return ;
-;;         LD      A, C                                 ; if misaligned column:
-;;         OR      A                                    ;
-;;         JR      NZ, boardCheckMoveSpriteRight_return ;     return TRUE
-;;         INC     E                                    ; if cell to right wall:
-;;         CALL    boardGetCellAddress                  ;
-;;         LD      A, (HL)                              ;
-;;         CP      BOARD_CELL_WALL                      ;
-;;         SCF                                          ;     return FALSE
-;;         JR      Z, boardCheckMoveSpriteRight_return  ;
-;;         XOR     A                                    ; return TRUE otherwise
-;; boardCheckMoveSpriteRight_return:                    ;
-;;         POP     HL                                   ; STACK: [PC BC DE]
-;;         POP     DE                                   ; STACK: [PC BC]
-;;         POP     BC                                   ; STACK: [PC]
-;;         RET                                          ; return
-
-;; boardCheckMoveSpriteDown:
-;;         PUSH    BC                                  ; STACK: [PC BC]
-;;         PUSH    DE                                  ; STACK: [PC BC DE]
-;;         PUSH    HL                                  ; STACK: [PC BC DE HL]
-;;         CALL    boardGetSpriteLocationData          ; get cell and offsets
-;;         LD      A, C                                ; if misaligned column:
-;;         OR      A                                   ;
-;;         SCF                                         ;     return FALSE
-;;         JR      NZ, boardCheckMoveSpriteDown_return ;
-;;         LD      A, B                                ; if misaligned row:
-;;         OR      A                                   ;
-;;         JR      NZ, boardCheckMoveSpriteDown_return ;     return TRUE
-;;         INC     D                                   ; if cell below wall:
-;;         CALL    boardGetCellAddress                 ;
-;;         LD      A, BOARD_CELL_WALL - 1              ;     return FALSE
-;;         SUB     (HL)                                ;
-;;         ADD     A, 1                                ;
-;; boardCheckMoveSpriteDown_return:                    ;
-;;         POP     HL                                  ; STACK: [PC BC DE]
-;;         POP     DE                                  ; STACK: [PC BC]
-;;         POP     BC                                  ; STACK: [PC]
-;;         RET                                         ; return
-
-;; boardCheckMoveSpriteLeft:
-;;         PUSH    BC                                   ; STACK: [PC BC]
-;;         PUSH    DE                                   ; STACK: [PC BC DE]
-;;         PUSH    HL                                   ; STACK: [PC BC DE HL]
-;;         CALL    boardGetSpriteLocationData           ; get cell and offsets
-;;         LD      A, B                                 ; if misaligned row:
-;;         OR      A                                    ;
-;;         SCF                                          ;     return FALSE
-;;         JR      NZ, boardCheckMoveSpriteLeft_return  ;
-;;         LD      A, C                                 ; if misaligned column:
-;;         OR      A                                    ;
-;;         JR      NZ, boardCheckMoveSpriteLeft_return  ;     return TRUE
-;;         DEC     E                                    ; if cell to right wall:
-;;         CALL    boardGetCellAddress                  ;
-;;         LD      A, (HL)                              ;
-;;         CP      BOARD_CELL_WALL                      ;
-;;         SCF                                          ;     return FALSE
-;;         JR      Z, boardCheckMoveSpriteLeft_return   ;
-;;         XOR     A                                    ; return TRUE otherwise
-;; boardCheckMoveSpriteLeft_return:                     ;
-;;         POP     HL                                   ; STACK: [PC BC DE]
-;;         POP     DE                                   ; STACK: [PC BC]
-;;         POP     BC                                   ; STACK: [PC]
-;;         RET                                          ; return
-
