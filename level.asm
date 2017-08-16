@@ -34,7 +34,7 @@ levelPlay_loop:                                ;
 levelPlay_skipWait:                            ;
         LD      HL, 10                         ;
         CALL    timerSet                       ;
-        CALL    levelUpdatePacman              ; update Pacman
+        CALL    levelPacmanUpdate              ; update Pacman
         CALL    boardUpdate                    ; draw and flush board
         CALL    keyboardRead                   ; ACC = keypress
         CALL    levelHandleKeypress            ; handle keypress
@@ -75,7 +75,7 @@ levelPacmanSetup:
         LD      (levelPacmanNextDirection), A   ;
         RET                                     ; return
 
-levelUpdatePacman:
+levelPacmanUpdate:
         ;; INPUT:
         ;;   <level data> -- determines how to update Pacman
         ;;
