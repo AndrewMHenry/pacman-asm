@@ -101,6 +101,8 @@ levelPacmanUpdate_skip:                        ; else:
         LD      A, LEVEL_PACMAN_ID             ;
         CALL    NC, boardMoveSprite            ;
 levelPacmanUpdate_return:                      ;
+        LD      A, LEVEL_PACMAN_ID             ; collect items
+        CALL    boardSpriteCollectItems        ;
         POP     DE                             ; STACK: [PC]
         RET                                    ; return
 

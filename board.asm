@@ -222,7 +222,36 @@ boardMoveSprite:
 ;;; SPRITE INTERACTION.........................................................
 
 boardSpriteCollectItems:
-        RET
+        ;; INPUT:
+        ;;   ACC -- sprite ID
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- items touched by sprite collected
+        ;;
+        ;; This current implementation of item collection uses a rough
+        ;; approximation to the desired collision detection: instead of
+        ;; determining intersection at the pixel level, we check only check
+        ;; contents of cells with which the sprite is completely aligned.
+        ;;
+        PUSH    BC                                  ; STACK: [PC BC]
+        PUSH    DE                                  ; STACK: [PC BC DE]
+        PUSH    HL                                  ; STACK: [PC BC DE HL]
+        PUSH    IX                                  ; STACK: [PC BC DE HL IX]
+        CALL    boardGetSpritePointer               ; get pixel-wise location
+        LD      E, (IX+BOARD_SPRITE_COLUMN)         ;
+        LD      D, (IX+BOARD_SPRITE_ROW)            ;
+        CALL    boardExtractLocationData            ; get offsets, cell
+        LD      A, C                                ; no dice if misaligned
+        OR      B                                   ;
+        JR      NZ, boardSpriteCollectItems_return  ;
+        CALL    boardGetCellAddress                 ; set cell empty
+        LD      (HL), BOARD_CELL_EMPTY              ;
+boardSpriteCollectItems_return:                     ;
+        POP     IX                                  ; STACK: [PC BC DE HL]
+        POP     HL                                  ; STACK: [PC BC DE]
+        POP     DE                                  ; STACK: [PC BC]
+        POP     BC                                  ; STACK: [PC]
+        RET                                         ; return
 
 ;;;============================================================================
 ;;; UPDATING INTERFACE ////////////////////////////////////////////////////////
