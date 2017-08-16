@@ -49,8 +49,10 @@ levelPlay_skipWait:                            ;
 ;;;============================================================================
 
 levelBoardSetup:
+        PUSH    BC
         PUSH    DE                          ; STACK: [PC DE]
         PUSH    HL                          ; STACK: [PC DE HL]
+        PUSH    IX
         CALL    boardInitialize             ; prepare board for staging
         LD      HL, levelWallMaps           ; stage the wall map
         CALL    boardStageWallMap           ;
@@ -58,9 +60,22 @@ levelBoardSetup:
         LD      HL, levelPacmanPicture      ;
         CALL    boardStageSprite            ;
         CALL    boardStageEmptyCell         ; (and stage empty cell there)
+        LD      B, LEVEL_NUM_GHOSTS
+        LD      IX, levelGhostStartCells
+levelBoardSetup_ghostLoop:
+        LD      E, (IX)
+        INC     IX
+        LD      D, (IX)
+        INC     IX
+        CALL    boardStageEmptyCell
+        LD      HL, levelGhostPicture
+        CALL    boardStageSprite
+        DJNZ    levelBoardSetup_ghostLoop
         CALL    boardDeploy                 ; prepare board for gameplay
+        POP     IX
         POP     HL                          ; STACK: [PC DE]
         POP     DE                          ; STACK: [PC]
+        POP     BC
         RET                                 ; return
 
 levelPacmanSetup:
@@ -155,6 +170,8 @@ levelHandleKeypress_left:
 ;;;============================================================================
 
 #define LEVEL_PACMAN_ID         0
+#define LEVEL_GHOST_START_ID    1
+#define LEVEL_NUM_GHOSTS        4
 
 #define LEVEL_DIRECTION_UP      0
 #define LEVEL_DIRECTION_RIGHT   1
@@ -180,6 +197,12 @@ levelWallMaps:
         .db     11111111b, 11111111b ; XXXXXXXXXXXXXXXX
 
 
+levelGhostStartCells:
+        .db     7, 3
+        .db     7, 5
+        .db     8, 3
+        .db     8, 5
+
 ;;;============================================================================
 ;;; SPRITE IMAGE DATA /////////////////////////////////////////////////////////
 ;;;============================================================================
@@ -190,6 +213,14 @@ levelPacmanPicture:
         .db     11100000b       ; XXX
         .db     11110000b       ; XXXX
         .db     01111000b       ;  XXXX
+        .db     00000000b       ;
+
+levelGhostPicture:
+        .db     01110000b       ;  XXX
+        .db     10101000b       ; X X X
+        .db     11111000b       ; XXXXX
+        .db     11111000b       ; XXXXX
+        .db     10101000b       ; X X X
         .db     00000000b       ;
 
 ;;;============================================================================
