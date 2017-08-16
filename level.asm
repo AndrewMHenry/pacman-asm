@@ -6,6 +6,11 @@
 #define LEVEL_RESULT_LOSE       1
 #define LEVEL_RESULT_QUIT       2
 
+#define LEVEL_STATUS_PLAY       0
+#define LEVEL_STATUS_WIN        1
+#define LEVEL_STATUS_LOSE       2
+#define LEVEL_STATUS_QUIT       3
+
 levelPlay:
         ;; INPUT:
         ;;   ACC -- number of level to play
@@ -16,50 +21,28 @@ levelPlay:
         ;;   <screen buffer> -- affected during play
         ;;   <LCD> -- affected during play
         ;;
-        PUSH    HL
-        CALL    levelBoardSetup           ; setup board for level number in ACC
-        CALL    levelPacmanSetup          ; initialize Pacman
-        CALL    drawClearScreen           ; clear the screen buffer and LCD
-        CALL    screenUpdate              ;
-        JR      levelPlay_skipWait        ;
-levelPlay_loop:                           ;
-        CALL    timerWait                 ;
-levelPlay_skipWait:                       ;
-        LD      HL, 10                    ;
-        CALL    timerSet                  ;
-        CALL    levelUpdatePacman         ; update Pacman
-        CALL    boardUpdate               ; draw and flush board
-        CALL    keyboardRead              ; ACC = keypress
-levelPlay_checkUp:                        ;
-        CP      skUp                      ; if key == UP:
-        JR      NZ, levelPlay_checkDown   ;
-        LD      A, LEVEL_DIRECTION_UP     ;     (levelPacmanDirection) = UP
-        LD      (levelPacmanDirection), A ;
-        JR      levelPlay_loop            ;     continue
-levelPlay_checkDown:                      ;
-        CP      skDown                    ; elif key == DOWN:
-        JR      NZ, levelPlay_checkLeft   ;
-        LD      A, LEVEL_DIRECTION_DOWN   ;     (levelPacmanDirection) = DOWN
-        LD      (levelPacmanDirection), A ;
-        JR      levelPlay_loop            ;     continue
-levelPlay_checkLeft:                      ;
-        CP      skLeft                    ;
-        JR      NZ, levelPlay_checkRight  ;
-        LD      A, LEVEL_DIRECTION_LEFT   ;     (levelPacmanDirection) = LEFT
-        LD      (levelPacmanDirection), A ;
-        JR      levelPlay_loop            ;     continue
-levelPlay_checkRight:                     ;
-        CP      skRight                   ;
-        JR      NZ, levelPlay_checkClear  ;
-        LD      A, LEVEL_DIRECTION_RIGHT  ;     (levelPacmanDirection) = RIGHT
-        LD      (levelPacmanDirection), A ;
-        JR      levelPlay_loop            ;     continue
-levelPlay_checkClear:                     ;
-        CP      skClear                   ; repeat loop if key not clear
-        JR      NZ, levelPlay_loop        ;
-        LD      A, LEVEL_RESULT_QUIT      ; result = quit otherwise
-        POP     HL
-        RET                               ; return
+        PUSH    HL                             ; STACK: [PC HL]
+        LD      A, LEVEL_STATUS_PLAY           ; status = PLAY
+        LD      (levelStatus), A               ;
+        CALL    levelBoardSetup                ; setup board for level
+        CALL    levelPacmanSetup               ; initialize Pacman
+        CALL    drawClearScreen                ; clear screen buffer and LCD
+        CALL    screenUpdate                   ;
+        JR      levelPlay_skipWait             ;
+levelPlay_loop:                                ;
+        CALL    timerWait                      ;
+levelPlay_skipWait:                            ;
+        LD      HL, 10                         ;
+        CALL    timerSet                       ;
+        CALL    levelUpdatePacman              ; update Pacman
+        CALL    boardUpdate                    ; draw and flush board
+        CALL    keyboardRead                   ; ACC = keypress
+        CALL    levelHandleKeypress            ; handle keypress
+        LD      A, (levelStatus)               ; repeat loop if still playing
+        CP      LEVEL_STATUS_PLAY              ;
+        JR      Z, levelPlay_loop              ;
+        POP     HL                             ; STACK: [PC]
+        RET                                    ; return
 
 ;;;============================================================================
 ;;; HELPER ROUTINES ///////////////////////////////////////////////////////////
@@ -89,6 +72,7 @@ levelPacmanSetup:
         ;;
         LD      A, LEVEL_PACMAN_START_DIRECTION ; set Pacman's direction
         LD      (levelPacmanDirection), A       ;
+        LD      (levelPacmanNextDirection), A   ;
         RET                                     ; return
 
 levelUpdatePacman:
@@ -98,59 +82,71 @@ levelUpdatePacman:
         ;; OUTPUT:
         ;;   <board data> -- Pacman changed on board
         ;;
-        PUSH    DE
-        PUSH    HL
-        LD      HL, levelUpdatePacman_dispatch
-        LD      A, (levelPacmanDirection)
-        ADD     A, A
-        LD      E, A
-        LD      D, 0
-        ADD     HL, DE
-        LD      A, (HL)
-        INC     HL
-        LD      H, (HL)
-        LD      L, A
-        CALL    levelUpdatePacman_jumpHL
-        POP     HL
-        POP     DE
-        RET
+        PUSH    DE                             ; STACK: [PC DE]
+        LD      A, (levelPacmanNextDirection)  ; D = next direction
+        LD      D, A                           ;
+        LD      A, LEVEL_PACMAN_ID             ; check move in next direction
+        CALL    boardCheckMoveSprite           ;
+        JR      C, levelPacmanUpdate_skip      ; if allowed:
+        LD      A, D                           ;     direction = next direction
+        LD      (levelPacmanDirection), A      ;
+        LD      A, LEVEL_PACMAN_ID             ;     move in new direction
+        CALL    boardMoveSprite                ;
+        JR      levelPacmanUpdate_return       ;     return
+levelPacmanUpdate_skip:                        ; else:
+        LD      A, (levelPacmanDirection)      ;
+        LD      D, A                           ;
+        LD      A, LEVEL_PACMAN_ID             ;     try current direction
+        CALL    boardCheckMoveSprite           ;
+        LD      A, LEVEL_PACMAN_ID             ;
+        CALL    NC, boardMoveSprite            ;
+levelPacmanUpdate_return:                      ;
+        POP     DE                             ; STACK: [PC]
+        RET                                    ; return
+
+levelHandleKeypress:
+        ;; INPUT:
+        ;;   ACC -- keypress
         ;;
-levelUpdatePacman_jumpHL:
-        JP      (HL)
+        ;; OUTPUT:
+        ;;   <level data> -- updated based on keypress
         ;;
-levelUpdatePacman_dispatch:
-        .dw     levelUpdatePacman_moveUp
-        .dw     levelUpdatePacman_moveRight
-        .dw     levelUpdatePacman_moveDown
-        .dw     levelUpdatePacman_moveLeft
+        CP      skClear                        ; CLEAR dispatch
+        JR      Z, levelHandleKeypress_clear   ;
+        CP      skUp                           ; UP dispatch
+        JR      Z, levelHandleKeypress_up      ;
+        CP      skRight                        ; RIGHT dispatch
+        JR      Z, levelHandleKeypress_right   ;
+        CP      skDown                         ; DOWN dispatch
+        JR      Z, levelHandleKeypress_down    ;
+        CP      skLeft                         ; LEFT dispatch
+        JR      Z, levelHandleKeypress_left    ;
+        RET                                    ; return
         ;;
-levelUpdatePacman_moveUp:
-        LD      A, LEVEL_PACMAN_ID
-        CALL    boardCheckMoveSpriteUp
-        LD      A, LEVEL_PACMAN_ID
-        CALL    NC, boardMoveSpriteUp
-        RET
+levelHandleKeypress_clear:
+        LD      A, LEVEL_STATUS_QUIT           ; status = QUIT
+        LD      (levelStatus), A               ;
+        RET                                    ; return
         ;;
-levelUpdatePacman_moveRight:
-        LD      A, LEVEL_PACMAN_ID
-        CALL    boardCheckMoveSpriteRight
-        LD      A, LEVEL_PACMAN_ID
-        CALL    NC, boardMoveSpriteRight
-        RET
+levelHandleKeypress_up:
+        LD      A, LEVEL_DIRECTION_UP          ; next direction = UP
+        LD      (levelPacmanNextDirection), A  ;
+        RET                                    ; return
         ;;
-levelUpdatePacman_moveDown:
-        LD      A, LEVEL_PACMAN_ID
-        CALL    boardCheckMoveSpriteDown
-        LD      A, LEVEL_PACMAN_ID
-        CALL    NC, boardMoveSpriteDown
-        RET
+levelHandleKeypress_right:
+        LD      A, LEVEL_DIRECTION_RIGHT       ; next direction = RIGHT
+        LD      (levelPacmanNextDirection), A  ;
+        RET                                    ; return
         ;;
-levelUpdatePacman_moveLeft:
-        LD      A, LEVEL_PACMAN_ID
-        CALL    boardCheckMoveSpriteLeft
-        LD      A, LEVEL_PACMAN_ID
-        CALL    NC, boardMoveSpriteLeft
-        RET
+levelHandleKeypress_down:
+        LD      A, LEVEL_DIRECTION_DOWN        ; next direction = DOWN
+        LD      (levelPacmanNextDirection), A  ;
+        RET                                    ; return
+        ;;
+levelHandleKeypress_left:
+        LD      A, LEVEL_DIRECTION_LEFT        ; next direction = LEFT
+        LD      (levelPacmanNextDirection), A  ;
+        RET                                    ; return
 
 ;;;============================================================================
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////
@@ -198,13 +194,12 @@ levelPacmanPicture:
 ;;; VARIABLE DATA /////////////////////////////////////////////////////////////
 ;;;============================================================================
 
-#define LEVEL_PACMAN_DIRECTION_SIZE     1
+#define levelStatus                     levelData
+#define levelPacmanDirection            levelStatus + 1
+#define levelPacmanNextDirection        levelPacmanDirection + 1
 
-#define levelPacmanDirection    levelData
-
-#define levelDataEnd    levelPacmanDirection + LEVEL_PACMAN_DIRECTION_SIZE
-
-#define LEVEL_DATA_SIZE levelDataEnd - levelData
+#define levelDataEnd                    levelPacmanNextDirection + 1
+#define LEVEL_DATA_SIZE                 levelDataEnd - levelData
 
 ;;;============================================================================
 ;;; SETUP AND TEARDOWN ////////////////////////////////////////////////////////
