@@ -261,8 +261,28 @@ boardCheckSpriteCollision:
         ;; OUTPUT:
         ;;   <carry flag> -- SET if and only if the sprites collide
         ;;
-        OR      A               ; dummy implementation: no collision
-        RET                     ; return
+        ;; ROUGH IMPLEMENTATION: Only assess collisions for colocated
+        ;; sprites.  Pixel-wise collision detection is probably preferable,
+        ;; but this method is vastly simpler.
+        ;;
+        PUSH    DE                           ; STACK: [PC DE]
+        PUSH    IX                           ; STACK: [PC DE IX]
+        CALL    boardGetSpritePointer        ; D, E = sprite A location
+        LD      D, (IX+BOARD_SPRITE_ROW)     ;
+        LD      E, (IX+BOARD_SPRITE_COLUMN)  ;
+        LD      A, C                         ; ACC = OR of location differences
+        CALL    boardGetSpritePointer        ;
+        LD      A, D                         ;
+        SUB     (IX+BOARD_SPRITE_ROW)        ;
+        LD      D, A                         ;
+        LD      A, E                         ;
+        SUB     (IX+BOARD_SPRITE_COLUMN)     ;
+        OR      D                            ;
+        POP     IX                           ; STACK: [PC DE]
+        POP     DE                           ; STACK: [PC]
+        RET     NZ                           ; return no carry if different
+        SCF                                  ; return carry otherwise
+        RET                                  ;
 
 ;;; MISCELLANEOUS..............................................................
 
