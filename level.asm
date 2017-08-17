@@ -2,10 +2,6 @@
 ;;; INTERFACE /////////////////////////////////////////////////////////////////
 ;;;============================================================================
 
-#define LEVEL_RESULT_WIN        0
-#define LEVEL_RESULT_LOSE       1
-#define LEVEL_RESULT_QUIT       2
-
 #define LEVEL_STATUS_PLAY       0
 #define LEVEL_STATUS_WIN        1
 #define LEVEL_STATUS_LOSE       2
