@@ -27,9 +27,15 @@ levelPlay:
         CALL    screenUpdate                   ;
         JR      levelPlay_skipWait             ;
 levelPlay_loop:                                ;
+        CALL    timerGet                       ; take time remaining mod 8
+        LD      H, 0                           ;
+        LD      A, L                           ;
+        AND     7                              ;
+        LD      L, A                           ;
+        CALL    timerSet                       ;
         CALL    timerWait                      ;
 levelPlay_skipWait:                            ;
-        LD      HL, 100                        ;
+        LD      HL, 8                          ;
         CALL    timerSet                       ;
         CALL    boardUpdate                    ; draw and flush board
         CALL    keyboardRead                   ; ACC = keypress
