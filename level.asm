@@ -269,12 +269,12 @@ levelWinCheck:
         ;; OUTPUT:
         ;;   (levelStatus) -- set to WIN if level has been won
         ;;
-        CALL    boardGetDotCount
-        OR      A
-        RET     NZ
-        LD      A, LEVEL_STATUS_WIN
-        LD      (levelStatus), A
-        RET
+        CALL    boardGetDotCount     ; return if nonzero dots
+        OR      A                    ;
+        RET     NZ                   ;
+        LD      A, LEVEL_STATUS_WIN  ; otherwise, level status = WIN
+        LD      (levelStatus), A     ;
+        RET                          ; return
 
 ;;;============================================================================
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////
