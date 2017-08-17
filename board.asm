@@ -615,11 +615,13 @@ boardCheckWall:
         ;;
         PUSH    BC                        ; STACK: [PC BC]
         PUSH    DE                        ; STACK: [PC BC DE]
+        PUSH    HL                        ; STACK: [PC BC DE HL]
         CALL    boardExtractLocationData  ; get cell and offsets
         CALL    boardGetCellAddress       ; HL = cell address
         LD      A, (HL)                   ; set carry iff cell is wall
         SUB     BOARD_CELL_WALL           ;
         SUB     1                         ;
+        POP     HL                        ; STACK: [PC BC DE]
         POP     DE                        ; STACK: [PC BC]
         POP     BC                        ; STACK: [PC]
         RET                               ; return
@@ -627,6 +629,11 @@ boardCheckWall:
 ;;;============================================================================
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////
 ;;;============================================================================
+
+#define BOARD_DIRECTION_UP      0
+#define BOARD_DIRECTION_RIGHT   1
+#define BOARD_DIRECTION_DOWN    2
+#define BOARD_DIRECTION_LEFT    3
 
 #define BOARD_CELL_EMPTY        0
 #define BOARD_CELL_WALL         1

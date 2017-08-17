@@ -26,15 +26,17 @@ levelPlay:
         LD      (levelStatus), A               ;
         CALL    levelBoardSetup                ; setup board for level
         CALL    levelPacmanSetup               ; initialize Pacman
+        CALL    levelGhostsSetup               ; initialize ghosts
         CALL    drawClearScreen                ; clear screen buffer and LCD
         CALL    screenUpdate                   ;
         JR      levelPlay_skipWait             ;
 levelPlay_loop:                                ;
         CALL    timerWait                      ;
 levelPlay_skipWait:                            ;
-        LD      HL, 10                         ;
+        LD      HL, 100                        ;
         CALL    timerSet                       ;
         CALL    levelPacmanUpdate              ; update Pacman
+        CALL    levelGhostsUpdate              ; update ghosts
         CALL    boardUpdate                    ; draw and flush board
         CALL    keyboardRead                   ; ACC = keypress
         CALL    levelHandleKeypress            ; handle keypress
@@ -49,34 +51,34 @@ levelPlay_skipWait:                            ;
 ;;;============================================================================
 
 levelBoardSetup:
-        PUSH    BC
-        PUSH    DE                          ; STACK: [PC DE]
-        PUSH    HL                          ; STACK: [PC DE HL]
-        PUSH    IX
-        CALL    boardInitialize             ; prepare board for staging
-        LD      HL, levelWallMaps           ; stage the wall map
-        CALL    boardStageWallMap           ;
-        LD      DE, LEVEL_PACMAN_START_CELL ; stage Pacman on the board
-        LD      HL, levelPacmanPicture      ;
-        CALL    boardStageSprite            ;
-        CALL    boardStageEmptyCell         ; (and stage empty cell there)
-        LD      B, LEVEL_NUM_GHOSTS
-        LD      IX, levelGhostStartCells
-levelBoardSetup_ghostLoop:
-        LD      E, (IX)
-        INC     IX
-        LD      D, (IX)
-        INC     IX
-        CALL    boardStageEmptyCell
-        LD      HL, levelGhostPicture
-        CALL    boardStageSprite
-        DJNZ    levelBoardSetup_ghostLoop
-        CALL    boardDeploy                 ; prepare board for gameplay
-        POP     IX
-        POP     HL                          ; STACK: [PC DE]
-        POP     DE                          ; STACK: [PC]
-        POP     BC
-        RET                                 ; return
+        PUSH    BC                           ; STACK: [PC BC]
+        PUSH    DE                           ; STACK: [PC BC DE]
+        PUSH    HL                           ; STACK: [PC BC DE HL]
+        PUSH    IX                           ; STACK: [PC BC DE HL IX]
+        CALL    boardInitialize              ; prepare board for staging
+        LD      HL, levelWallMaps            ; stage the wall map
+        CALL    boardStageWallMap            ;
+        LD      DE, LEVEL_PACMAN_START_CELL  ; stage Pacman on the board
+        LD      HL, levelPacmanPicture       ;
+        CALL    boardStageSprite             ;
+        CALL    boardStageEmptyCell          ; (and stage empty cell there)
+        LD      B, LEVEL_NUM_GHOSTS          ; B = number of ghosts
+        LD      HL, levelGhostPicture        ; HL = ghost picture
+        LD      IX, levelGhostStartCells     ; IX = base of ghost cell array
+levelBoardSetup_ghostLoop:                   ;
+        LD      E, (IX)                      ; E = column
+        INC     IX                           ;
+        LD      D, (IX)                      ; D = row
+        INC     IX                           ;
+        CALL    boardStageEmptyCell          ; stage empty cell
+        CALL    boardStageSprite             ; stage ghost sprite
+        DJNZ    levelBoardSetup_ghostLoop    ; repeat for each ghost
+        CALL    boardDeploy                  ; prepare board for gameplay
+        POP     IX                           ; STACK: [PC BC DE HL]
+        POP     HL                           ; STACK: [PC BC DE]
+        POP     DE                           ; STACK: [PC BC]
+        POP     BC                           ; STACK: [PC]
+        RET                                  ; return
 
 levelPacmanSetup:
         ;; INPUT:
@@ -85,10 +87,29 @@ levelPacmanSetup:
         ;; OUTPUT:
         ;;   <level data> -- Pacman's data initialized for level
         ;;
-        LD      A, LEVEL_PACMAN_START_DIRECTION ; set Pacman's direction
-        LD      (levelPacmanDirection), A       ;
-        LD      (levelPacmanNextDirection), A   ;
-        RET                                     ; return
+        LD      A, LEVEL_PACMAN_START_DIRECTION  ; set Pacman's direction
+        LD      (levelPacmanDirection), A        ;
+        LD      (levelPacmanNextDirection), A    ;
+        RET                                      ; return
+
+levelGhostsSetup:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <level data> -- Ghosts' data initialized for level
+        ;;
+        PUSH    BC                             ; STACK: [PC BC]
+        PUSH    DE                             ; STACK: [PC BC DE]
+        PUSH    HL                             ; STACK: [PC BC DE HL]
+        LD      BC, LEVEL_NUM_GHOSTS           ; copy start directions
+        LD      DE, levelGhostDirections       ;
+        LD      HL, levelGhostStartDirections  ;
+        LDIR                                   ;
+        POP     HL                             ; STACK: [PC BC DE]
+        POP     DE                             ; STACK: [PC BC]
+        POP     BC                             ; STACK: [PC]
+        RET                                    ; return
 
 levelPacmanUpdate:
         ;; INPUT:
@@ -119,6 +140,47 @@ levelPacmanUpdate_return:                      ;
         LD      A, LEVEL_PACMAN_ID             ; collect items
         CALL    boardSpriteCollectItems        ;
         POP     DE                             ; STACK: [PC]
+        RET                                    ; return
+
+levelGhostsUpdate:
+        ;; INPUT:
+        ;;   <level data> -- determines how to update ghosts
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- ghosts changed on board
+        ;;
+        ;; NOTE: This routine will enter an infinite loop if
+        ;; each direction is unavailable to any ghost.
+        ;;
+        PUSH    BC                             ; STACK: [PC BC]
+        PUSH    DE                             ; STACK: [PC BC DE]
+        PUSH    HL                             ; STACK: [PC BC DE HL]
+        LD      B, LEVEL_NUM_GHOSTS            ; B = number of ghosts
+        LD      C, LEVEL_GHOST_START_ID        ; C = ID of first ghost
+        LD      HL, levelGhostDirections       ; HL = base of ghost directions
+levelGhostsUpdate_loop:                        ;
+        LD      D, (HL)                        ; D = direction from array
+        LD      A, C                           ; ACC = ghost ID
+        CALL    boardCheckMoveSprite           ; check movement 
+        JR      NC, levelGhostsUpdate_skip     ; skip if ok
+levelGhostsUpdate_turnLoop:                    ;
+        LD      A, D                           ; D = (D + 1) % 4
+        INC     A                              ;
+        AND     3                              ;
+        LD      D, A                           ;
+        LD      A, C                           ; ACC = ghost ID
+        CALL    boardCheckMoveSprite           ; check movement
+        JR      C, levelGhostsUpdate_turnLoop  ; repeat if disallowed
+        LD      (HL), D                        ; set direction to D
+levelGhostsUpdate_skip:                        ;
+        LD      A, C                           ; ACC = ghost ID
+        CALL    boardMoveSprite                ; move
+        INC     C                              ; advance ghost ID
+        INC     HL                             ; advance direction pointer
+        DJNZ    levelGhostsUpdate_loop         ; repeat for each ghost
+        POP     HL                             ; STACK: [PC BC DE]
+        POP     DE                             ; STACK: [PC BC]
+        POP     BC                             ; STACK: [PC]
         RET                                    ; return
 
 levelHandleKeypress:
@@ -169,14 +231,14 @@ levelHandleKeypress_left:
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////
 ;;;============================================================================
 
-#define LEVEL_PACMAN_ID         0
-#define LEVEL_GHOST_START_ID    1
-#define LEVEL_NUM_GHOSTS        4
+#define LEVEL_PACMAN_ID                 0
+#define LEVEL_GHOST_START_ID            1
+#define LEVEL_NUM_GHOSTS                4
 
-#define LEVEL_DIRECTION_UP      0
-#define LEVEL_DIRECTION_RIGHT   1
-#define LEVEL_DIRECTION_DOWN    2
-#define LEVEL_DIRECTION_LEFT    3
+#define LEVEL_DIRECTION_UP              BOARD_DIRECTION_UP
+#define LEVEL_DIRECTION_RIGHT           BOARD_DIRECTION_RIGHT
+#define LEVEL_DIRECTION_DOWN            BOARD_DIRECTION_DOWN
+#define LEVEL_DIRECTION_LEFT            BOARD_DIRECTION_LEFT
 
 #define LEVEL_PACMAN_START_CELL         256 * 7 + 7
 #define LEVEL_PACMAN_START_DIRECTION    LEVEL_DIRECTION_RIGHT
@@ -198,10 +260,19 @@ levelWallMaps:
 
 
 levelGhostStartCells:
+        ;; This is an array of two-byte (cell-wise column, cell-wise row)
+        ;; pairs representing initial locations for the ghosts.
+        ;;
         .db     7, 3
         .db     7, 5
         .db     8, 3
         .db     8, 5
+
+levelGhostStartDirections:
+        .db     BOARD_DIRECTION_RIGHT
+        .db     BOARD_DIRECTION_UP
+        .db     BOARD_DIRECTION_DOWN
+        .db     BOARD_DIRECTION_LEFT
 
 ;;;============================================================================
 ;;; SPRITE IMAGE DATA /////////////////////////////////////////////////////////
@@ -230,8 +301,9 @@ levelGhostPicture:
 #define levelStatus                     levelData
 #define levelPacmanDirection            levelStatus + 1
 #define levelPacmanNextDirection        levelPacmanDirection + 1
+#define levelGhostDirections            levelPacmanNextDirection + 1
 
-#define levelDataEnd                    levelPacmanNextDirection + 1
+#define levelDataEnd                    levelGhostDirections + LEVEL_NUM_GHOSTS
 #define LEVEL_DATA_SIZE                 levelDataEnd - levelData
 
 ;;;============================================================================
