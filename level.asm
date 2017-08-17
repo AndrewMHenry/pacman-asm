@@ -35,11 +35,12 @@ levelPlay_loop:                                ;
 levelPlay_skipWait:                            ;
         LD      HL, 100                        ;
         CALL    timerSet                       ;
-        CALL    levelPacmanUpdate              ; update Pacman
-        CALL    levelGhostsUpdate              ; update ghosts
         CALL    boardUpdate                    ; draw and flush board
         CALL    keyboardRead                   ; ACC = keypress
         CALL    levelHandleKeypress            ; handle keypress
+        CALL    levelPacmanUpdate              ; update Pacman
+        CALL    levelGhostsUpdate              ; update ghosts
+        CALL    levelWinCheck                  ; check for win
         LD      A, (levelStatus)               ; repeat loop if still playing
         CP      LEVEL_STATUS_PLAY              ;
         JR      Z, levelPlay_loop              ;
@@ -226,6 +227,20 @@ levelHandleKeypress_left:
         LD      A, LEVEL_DIRECTION_LEFT        ; next direction = LEFT
         LD      (levelPacmanNextDirection), A  ;
         RET                                    ; return
+
+levelWinCheck:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   (levelStatus) -- set to WIN if level has been won
+        ;;
+        CALL    boardGetDotCount
+        OR      A
+        RET     NZ
+        LD      A, LEVEL_STATUS_WIN
+        LD      (levelStatus), A
+        RET
 
 ;;;============================================================================
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////

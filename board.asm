@@ -253,6 +253,17 @@ boardSpriteCollectItems_return:                     ;
         POP     BC                                  ; STACK: [PC]
         RET                                         ; return
 
+;;; MISCELLANEOUS..............................................................
+
+boardGetDotCount:
+        ;; INPUT:
+        ;;   <board data> -- determines number of dots on board
+        ;;
+        ;; OUTPUT:
+        ;;   ACC -- number of dots on board
+        ;;
+        JP      boardCountDots  ; compute dot count directly
+
 ;;;============================================================================
 ;;; UPDATING INTERFACE ////////////////////////////////////////////////////////
 ;;;============================================================================
@@ -413,6 +424,30 @@ boardDivideCellSide_loop:
         JR      NC, boardDivideCellSide_loop
         ADD     A, BOARD_CELL_SIDE
         RET
+
+boardCountDots:
+        ;; INPUT:
+        ;;   <board data> -- contains dots to be counted
+        ;;
+        ;; OUTPUT:
+        ;;   ACC -- number of dots on board
+        ;;
+        PUSH    BC                         ; STACK: [PC BC]
+        PUSH    HL                         ; STACK: [PC BC HL]
+        LD      A, BOARD_CELL_DOT          ; ACC = DOT for comparison
+        LD      BC, BOARD_ARRAY_SIZE << 8  ; B, C = size, 0
+        LD      HL, boardArray             ; HL = base of board array
+boardCountDots_loop:                       ;
+        CP      (HL)                       ; set Z if cell is dot
+        JR      NZ, boardCountDots_skip    ; skip if not
+        INC     C                          ; increment C otherwise
+boardCountDots_skip:                       ;
+        INC     HL                         ; advance HL to next cell
+        DJNZ    boardCountDots_loop        ; repeat for each cell
+        LD      A, C                       ; ACC = C (count)
+        POP     HL                         ; STACK: [PC BC]
+        POP     BC                         ; STACK: [PC]
+        RET                                ; return
 
 ;;;============================================================================
 ;;; SPRITE HELPER ROUTINES ////////////////////////////////////////////////////
