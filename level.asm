@@ -75,6 +75,15 @@ levelBoardSetup_ghostLoop:                   ;
         CALL    boardStageEmptyCell          ; stage empty cell
         CALL    boardStageSprite             ; stage ghost sprite
         DJNZ    levelBoardSetup_ghostLoop    ; repeat for each ghost
+        LD      B, LEVEL_NUM_EMPTY_CELLs     ; B = number of empty cells
+        LD      HL, levelEmptyCells          ; HL = empty cell array base
+levelBoardSetup_emptyLoop:                   ;
+        LD      E, (HL)                      ; E = cell-wise column
+        INC     HL                           ;
+        LD      D, (HL)                      ; D = cell-wise row
+        INC     HL                           ;
+        CALL    boardStageEmptyCell          ; stage empty cell
+        DJNZ    levelBoardSetup_emptyLoop    ; repeat for each empty cell
         CALL    boardDeploy                  ; prepare board for gameplay
         POP     IX                           ; STACK: [PC BC DE HL]
         POP     HL                           ; STACK: [PC BC DE]
@@ -313,6 +322,14 @@ levelGhostStartDirections:
         .db     BOARD_DIRECTION_UP
         .db     BOARD_DIRECTION_DOWN
         .db     BOARD_DIRECTION_LEFT
+
+#define LEVEL_NUM_EMPTY_CELLS   4
+
+levelEmptyCells:
+        .db     6, 4
+        .db     7, 4
+        .db     8, 4
+        .db     9, 4
 
 ;;;============================================================================
 ;;; SPRITE IMAGE DATA /////////////////////////////////////////////////////////
