@@ -48,6 +48,8 @@ levelPlay_skipWait:                            ;
 ;;; HELPER ROUTINES ///////////////////////////////////////////////////////////
 ;;;============================================================================
 
+;;; SETUP......................................................................
+
 levelBoardSetup:
         PUSH    BC                           ; STACK: [PC BC]
         PUSH    DE                           ; STACK: [PC BC DE]
@@ -116,6 +118,52 @@ levelGhostsSetup:
         POP     HL                             ; STACK: [PC BC DE]
         POP     DE                             ; STACK: [PC BC]
         POP     BC                             ; STACK: [PC]
+        RET                                    ; return
+
+;;; UPDATING...................................................................
+
+levelHandleKeypress:
+        ;; INPUT:
+        ;;   ACC -- keypress
+        ;;
+        ;; OUTPUT:
+        ;;   <level data> -- updated based on keypress
+        ;;
+        CP      skClear                        ; CLEAR dispatch
+        JR      Z, levelHandleKeypress_clear   ;
+        CP      skUp                           ; UP dispatch
+        JR      Z, levelHandleKeypress_up      ;
+        CP      skRight                        ; RIGHT dispatch
+        JR      Z, levelHandleKeypress_right   ;
+        CP      skDown                         ; DOWN dispatch
+        JR      Z, levelHandleKeypress_down    ;
+        CP      skLeft                         ; LEFT dispatch
+        JR      Z, levelHandleKeypress_left    ;
+        RET                                    ; return
+        ;;
+levelHandleKeypress_clear:
+        LD      A, LEVEL_STATUS_QUIT           ; status = QUIT
+        LD      (levelStatus), A               ;
+        RET                                    ; return
+        ;;
+levelHandleKeypress_up:
+        LD      A, BOARD_DIRECTION_UP          ; next direction = UP
+        LD      (levelPacmanNextDirection), A  ;
+        RET                                    ; return
+        ;;
+levelHandleKeypress_right:
+        LD      A, BOARD_DIRECTION_RIGHT       ; next direction = RIGHT
+        LD      (levelPacmanNextDirection), A  ;
+        RET                                    ; return
+        ;;
+levelHandleKeypress_down:
+        LD      A, BOARD_DIRECTION_DOWN        ; next direction = DOWN
+        LD      (levelPacmanNextDirection), A  ;
+        RET                                    ; return
+        ;;
+levelHandleKeypress_left:
+        LD      A, BOARD_DIRECTION_LEFT        ; next direction = LEFT
+        LD      (levelPacmanNextDirection), A  ;
         RET                                    ; return
 
 levelPacmanUpdate:
@@ -190,6 +238,8 @@ levelGhostsUpdate_skip:                        ;
         POP     BC                             ; STACK: [PC]
         RET                                    ; return
 
+;;; CHECKING...................................................................
+
 levelGhostCollisionCheck:
         ;; INPUT:
         ;;   <none>
@@ -213,50 +263,6 @@ levelGhostCollisionCheck_break:                    ;
 levelGhostCollisionCheck_return:                   ;
         POP     BC                                 ; STACK: [PC]
         RET                                        ; return
-
-levelHandleKeypress:
-        ;; INPUT:
-        ;;   ACC -- keypress
-        ;;
-        ;; OUTPUT:
-        ;;   <level data> -- updated based on keypress
-        ;;
-        CP      skClear                        ; CLEAR dispatch
-        JR      Z, levelHandleKeypress_clear   ;
-        CP      skUp                           ; UP dispatch
-        JR      Z, levelHandleKeypress_up      ;
-        CP      skRight                        ; RIGHT dispatch
-        JR      Z, levelHandleKeypress_right   ;
-        CP      skDown                         ; DOWN dispatch
-        JR      Z, levelHandleKeypress_down    ;
-        CP      skLeft                         ; LEFT dispatch
-        JR      Z, levelHandleKeypress_left    ;
-        RET                                    ; return
-        ;;
-levelHandleKeypress_clear:
-        LD      A, LEVEL_STATUS_QUIT           ; status = QUIT
-        LD      (levelStatus), A               ;
-        RET                                    ; return
-        ;;
-levelHandleKeypress_up:
-        LD      A, BOARD_DIRECTION_UP          ; next direction = UP
-        LD      (levelPacmanNextDirection), A  ;
-        RET                                    ; return
-        ;;
-levelHandleKeypress_right:
-        LD      A, BOARD_DIRECTION_RIGHT       ; next direction = RIGHT
-        LD      (levelPacmanNextDirection), A  ;
-        RET                                    ; return
-        ;;
-levelHandleKeypress_down:
-        LD      A, BOARD_DIRECTION_DOWN        ; next direction = DOWN
-        LD      (levelPacmanNextDirection), A  ;
-        RET                                    ; return
-        ;;
-levelHandleKeypress_left:
-        LD      A, BOARD_DIRECTION_LEFT        ; next direction = LEFT
-        LD      (levelPacmanNextDirection), A  ;
-        RET                                    ; return
 
 levelWinCheck:
         ;; INPUT:
