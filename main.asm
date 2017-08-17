@@ -7,14 +7,15 @@ main:
         ;;
         ;; This is the main entry point for the application.
         ;;
-        PUSH    HL              ; STACK: [PC HL]
-        LD      HL, fontFBF     ; set font to fontFBF
-        CALL    writeSetFont    ;
-        CALL    titleScreenRun  ; run the title screen
-        CALL    gamePlay        ; play the game
-        CALL    mainEndScreen   ; show end screen
-        POP     HL              ; STACK: [PC]
-        RET                     ; return
+        PUSH    HL                 ; STACK: [PC HL]
+        LD      HL, fontFBF        ; set font to fontFBF
+        CALL    writeSetFont       ;
+        CALL    titleScreenRun     ; run the title screen
+        CALL    gamePlay           ; play the game
+        CP      GAME_RESULT_QUIT   ; show end screen if user did not quit
+        CALL    NZ, mainEndScreen  ;
+        POP     HL                 ; STACK: [PC]
+        RET                        ; return
 
 ;;; END SCREEN.................................................................
 

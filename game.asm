@@ -14,13 +14,18 @@ gamePlay_loop:                       ;
         CALL    levelPlay            ; play the current level
         CP      LEVEL_STATUS_LOSE    ; break to lose if lost
         JR      Z, gamePlay_lose     ;
+        CP      LEVEL_STATUS_QUIT    ; break to quit if quit
+        JR      Z, gamePlay_quit     ;
         INC     C                    ; move to next level
         DJNZ    gamePlay_loop        ; repeat loop
 gamePlay_win:                        ; (fall through to win if success)
         LD      A, GAME_RESULT_WIN   ; ACC = WIN
-        JR      gamePlay_return      ;
+        JR      gamePlay_return      ; branch to return
 gamePlay_lose:                       ;
-        LD      A, GAME_RESULT_LOSE  ; ACC = lose (then fall through to return)
+        LD      A, GAME_RESULT_LOSE  ; ACC = LOSE
+        JR      gamePlay_return      ; branch to return
+gamePlay_quit:                       ;
+        LD      A, GAME_RESULT_QUIT  ; ACC = QUIT (then fall through to return)
 gamePlay_return:                     ;
         POP     BC                   ; STACK: [PC]
         RET                          ; return
