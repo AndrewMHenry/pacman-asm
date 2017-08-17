@@ -41,6 +41,7 @@ levelPlay_skipWait:                            ;
         CALL    levelPacmanUpdate              ; update Pacman
         CALL    levelGhostsUpdate              ; update ghosts
         CALL    levelWinCheck                  ; check for win
+        CALL    levelGhostCollisionCheck       ; check for ghost collision
         LD      A, (levelStatus)               ; repeat loop if still playing
         CP      LEVEL_STATUS_PLAY              ;
         JR      Z, levelPlay_loop              ;
@@ -183,6 +184,30 @@ levelGhostsUpdate_skip:                        ;
         POP     DE                             ; STACK: [PC BC]
         POP     BC                             ; STACK: [PC]
         RET                                    ; return
+
+levelGhostCollisionCheck:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <level data> -- collision registered
+        ;;
+        PUSH    BC                                 ; STACK: [PC BC]
+        LD      B, LEVEL_NUM_GHOSTS                ; B = ghost count
+        LD      C, LEVEL_GHOST_START_ID            ; C = first ghost ID
+levelGhostCollisionCheck_loop:                     ;
+        LD      A, LEVEL_PACMAN_ID                 ; ACC = Pacman ID
+        CALL    boardCheckSpriteCollision          ; check for collision
+        JR      C, levelGhostCollisionCheck_break  ; break if carry (true)
+        INC     C                                  ; advance to next ghost ID
+        DJNZ    levelGhostCollisionCheck_loop      ; repeat for each ghost
+        JR      levelGhostCollisionCheck_return    ; return (no collision)
+levelGhostCollisionCheck_break:                    ;
+        LD      A, LEVEL_STATUS_LOSE               ; level status = LOSE
+        LD      (levelStatus), A                   ;
+levelGhostCollisionCheck_return:                   ;
+        POP     BC                                 ; STACK: [PC]
+        RET                                        ; return
 
 levelHandleKeypress:
         ;; INPUT:

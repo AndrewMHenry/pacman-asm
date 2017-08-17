@@ -253,6 +253,17 @@ boardSpriteCollectItems_return:                     ;
         POP     BC                                  ; STACK: [PC]
         RET                                         ; return
 
+boardCheckSpriteCollision:
+        ;; INPUT:
+        ;;   ACC -- ID of first sprite
+        ;;   C -- ID of second sprite
+        ;;
+        ;; OUTPUT:
+        ;;   <carry flag> -- SET if and only if the sprites collide
+        ;;
+        OR      A               ; dummy implementation: no collision
+        RET                     ; return
+
 ;;; MISCELLANEOUS..............................................................
 
 boardGetDotCount:
