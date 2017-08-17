@@ -243,22 +243,22 @@ levelHandleKeypress_clear:
         RET                                    ; return
         ;;
 levelHandleKeypress_up:
-        LD      A, LEVEL_DIRECTION_UP          ; next direction = UP
+        LD      A, BOARD_DIRECTION_UP          ; next direction = UP
         LD      (levelPacmanNextDirection), A  ;
         RET                                    ; return
         ;;
 levelHandleKeypress_right:
-        LD      A, LEVEL_DIRECTION_RIGHT       ; next direction = RIGHT
+        LD      A, BOARD_DIRECTION_RIGHT       ; next direction = RIGHT
         LD      (levelPacmanNextDirection), A  ;
         RET                                    ; return
         ;;
 levelHandleKeypress_down:
-        LD      A, LEVEL_DIRECTION_DOWN        ; next direction = DOWN
+        LD      A, BOARD_DIRECTION_DOWN        ; next direction = DOWN
         LD      (levelPacmanNextDirection), A  ;
         RET                                    ; return
         ;;
 levelHandleKeypress_left:
-        LD      A, LEVEL_DIRECTION_LEFT        ; next direction = LEFT
+        LD      A, BOARD_DIRECTION_LEFT        ; next direction = LEFT
         LD      (levelPacmanNextDirection), A  ;
         RET                                    ; return
 
@@ -284,13 +284,8 @@ levelWinCheck:
 #define LEVEL_GHOST_START_ID            1
 #define LEVEL_NUM_GHOSTS                4
 
-#define LEVEL_DIRECTION_UP              BOARD_DIRECTION_UP
-#define LEVEL_DIRECTION_RIGHT           BOARD_DIRECTION_RIGHT
-#define LEVEL_DIRECTION_DOWN            BOARD_DIRECTION_DOWN
-#define LEVEL_DIRECTION_LEFT            BOARD_DIRECTION_LEFT
-
 #define LEVEL_PACMAN_START_CELL         256 * 7 + 7
-#define LEVEL_PACMAN_START_DIRECTION    LEVEL_DIRECTION_RIGHT
+#define LEVEL_PACMAN_START_DIRECTION    BOARD_DIRECTION_RIGHT
 
 ;;;============================================================================
 ;;; LEVEL DATA ////////////////////////////////////////////////////////////////
