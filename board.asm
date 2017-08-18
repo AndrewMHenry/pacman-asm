@@ -299,6 +299,30 @@ boardGetDotCount:
 ;;; UPDATING INTERFACE ////////////////////////////////////////////////////////
 ;;;============================================================================
 
+boardDraw:
+        ;; INPUT:
+        ;;   <board data> -- current state of board
+        ;;
+        ;; OUTPUT:
+        ;;   <screen buffer> -- updated to reflect board contents
+        ;;
+        ;; This routine unconditionally draws everything on the board.
+        ;;
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+        LD      BC, BOARD_DIMENSIONS
+        LD      DE, BOARD_LOCATION
+        CALL    drawClearRectangle
+        LD      HL, boardDrawCell
+        CALL    boardIter
+        LD      HL, boardDrawSprite
+        CALL    boardSpriteIter
+        POP     HL
+        POP     DE
+        POP     BC
+        RET
+
 boardUpdate:
         ;; INPUTS:
         ;;   <board data> -- current state of board

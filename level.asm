@@ -23,9 +23,10 @@ levelPlay:
         CALL    levelBoardSetup                ; setup board for level
         CALL    levelPacmanSetup               ; initialize Pacman
         CALL    levelGhostsSetup               ; initialize ghosts
-        CALL    drawClearScreen                ; clear screen buffer and LCD
-        CALL    screenUpdate                   ;
-        JR      levelPlay_skipWait             ;
+        CALL    drawClearScreen                ; clear screen buffer
+        CALL    boardDraw                      ; draw the board
+        CALL    screenUpdate                   ; flush to screen
+        JR      levelPlay_skipWait             ; enter partway through loop
 levelPlay_loop:                                ;
         ;;
         ;; MORE CHEAP DEBUGGING: quit if timer overflowed.
