@@ -309,11 +309,7 @@ boardUpdate:
         PUSH    BC                    ; STACK: [PC BC]
         PUSH    DE                    ; STACK: [PC BC DE]
         PUSH    HL                    ; STACK: [PC BC DE HL]
-        LD      BC, BOARD_DIMENSIONS  ; clear board footprint
-        LD      DE, BOARD_LOCATION    ;
-        CALL    drawClearRectangle    ;
-        LD      HL, boardDrawCell     ; draw all board cells
-        CALL    boardIter             ;
+        CALL    boardUpdateCells      ; update cells
         LD      HL, boardDrawSprite   ; draw all sprites
         CALL    boardSpriteIter       ;
         CALL    screenUpdate          ; flush buffer to LCD
@@ -325,6 +321,26 @@ boardUpdate:
 ;;;============================================================================
 ;;; CELL HELPER ROUTINES //////////////////////////////////////////////////////
 ;;;============================================================================
+
+boardUpdateCells:
+        ;; INPUT:
+        ;;   <board data> -- determines cells to update, and how
+        ;;
+        ;; OUTPUT:
+        ;;   <screen buffer> -- updated pictures drawn
+        ;;
+        PUSH    BC                    ; STACK: [PC BC]
+        PUSH    DE                    ; STACK: [PC BC DE]
+        PUSH    HL                    ; STACK: [PC BC DE HL]
+        LD      BC, BOARD_DIMENSIONS  ; clear board footprint
+        LD      DE, BOARD_LOCATION    ;
+        CALL    drawClearRectangle    ;
+        LD      HL, boardDrawCell     ; draw all board cells
+        CALL    boardIter             ;
+        POP     HL                    ; STACK: [PC BC DE]
+        POP     DE                    ; STACK: [PC BC]
+        POP     BC                    ; STACK: [PC]
+        RET                           ; return
 
 boardIter:
         ;; INPUT:
