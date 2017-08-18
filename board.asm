@@ -332,9 +332,6 @@ boardUpdateCells:
         PUSH    BC                          ; STACK: [PC BC]
         PUSH    DE                          ; STACK: [PC BC DE]
         PUSH    HL                          ; STACK: [PC BC DE HL]
-        LD      BC, BOARD_DIMENSIONS        ; clear board footprint
-        LD      DE, BOARD_LOCATION          ;
-        CALL    drawClearRectangle          ;
         LD      HL, boardUpdateSpriteCells  ; draw all board cells
         CALL    boardSpriteIter             ;
         POP     HL                          ; STACK: [PC BC DE]
@@ -362,6 +359,11 @@ boardUpdateSpriteCells:
         CALL    boardExtractLocationData          ; E, D = cell-wise location
         DEC     E                                 ; E, D = upper left of square
         DEC     D                                 ;
+        PUSH    DE                                ; STACK: [PC BC DE HL IX DE]
+        CALL    boardGetCellLocation              ; D, E = pixel-wise location
+        LD      BC, BOARD_CELL_SIDE * 00303h      ; B, C = pixel-wise size
+        CALL    drawClearRectangle                ; clear rectangle under cells
+        POP     DE                                ; STACK: [PC BC DE HL IX]
         LD      H, D                              ; (save initial row in H)
         LD      C, 3                              ; C (outer counter) = 3
 boardUpdateSpriteCells_outer:                     ;
