@@ -27,6 +27,19 @@ levelPlay:
         CALL    screenUpdate                   ;
         JR      levelPlay_skipWait             ;
 levelPlay_loop:                                ;
+        ;;
+        ;; MORE CHEAP DEBUGGING: quit if timer overflowed.
+        ;;
+        CALL    timerGet                       ;
+        PUSH    DE                             ;
+        LD      DE, -8                         ;
+        ADD     HL, DE                         ;
+        POP     DE                             ;
+        JR      NC, levelPlay_debugSkip        ;
+        LD      A, LEVEL_STATUS_QUIT           ;
+        LD      (levelStatus), A               ;
+levelPlay_debugSkip:                           ;
+        ;;
         CALL    timerGet                       ; take time remaining mod 8
         LD      H, 0                           ;
         LD      A, L                           ;
