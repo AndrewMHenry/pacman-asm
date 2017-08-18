@@ -51,6 +51,79 @@ levelPlay_skipWait:                            ;
         RET                                    ; return
 
 ;;;============================================================================
+;;; TIMING CONSIDERATIONS /////////////////////////////////////////////////////
+;;;============================================================================
+
+;;; Given that the only portable, independent timing mechanism is the ~110 Hz
+;;; interrupt clock, 1/110 seconds seems to be the minimum amount of time
+;;; between uniformly-timed events.  To put the game on this clock requires us
+;;; to fit our game loop code into 6000000 / 110 != 54545 t-states.
+;;;
+;;; The limiting factor on the code speed seems to be writing to the LCD, so
+;;; it makes sense to consider the number of LCD writes required in each game
+;;; cycle.  We assume that the following screen areas will need updating:
+;;;
+;;;     (1) Five sprites, which may be misaligned horizontally or vertically
+;;;         or neither,
+;;;
+;;;     (2) The status bar below the screen, which spans the entire width
+;;;         of the screen.
+;;;
+;;;     (3) One item which appears (aligned) on the board.
+;;;
+;;; If a sprite is misaligned vertically, its bounding rectangle may span
+;;; 2 bytes horizontally and 12 bytes vertically (due to the cells it
+;;; touches).  Since both columns require two additional writes to set the
+;;; row and column, this gives a total of 28 writes per sprite, for a total
+;;; of 140 sprite writes.
+;;;
+;;; Assuming the entire status bar needs to be updated (which is negotiable),
+;;; we need a total of (5 + 2) * 12 = 84 LCD writes to span five rows all the
+;;; way across the LCD.
+;;;
+;;; Finally, an item that appears may require up to (6 + 2) * 2 = 16 additional
+;;; writes.
+;;;
+;;; Adding these values gives 240 LCD writes, which occupy a minimum of
+;;; 240 * 10 microseconds = 2.4 milliseconds.  Realistically, the time for
+;;; each write might actually be 10 * (1 + 11/60) because the OUT instruction
+;;; may not be included in the delay, bumping up the total screen update time
+;;; to 2.84 milliseconds.  This certainly fits in the ~9 milliseconds in each
+;;; interupt cycle.
+;;;
+;;; However, there does seem to be a much more efficient way to handle the LCD.
+;;; In particular, everything except the sprites is aligned on 6-pixel-wide
+;;; boundaries, and the sprites only ever need to occupy two cells at a time.
+;;; Therefore, the minimum number of LCD writes if the LCD is in 6-bit mode
+;;; is closer to
+;;;
+;;;     5 * (2 + 6) * 2  // 5 sprites, 8 bytes per column, 2 columns
+;;;     + 1 * (2 + 6)    // 1 item, 8 bytes per column
+;;;     + 16 * (2 + 5)   // 16 status cells, 7 bytes per column
+;;;     = 200
+;;;
+;;; However, the actual number is likely to be lower because not all of the
+;;; status bar characters will need to change.
+;;;
+;;;
+;;; Now we're getting somewhere: in a recent simulation, one iteration of a
+;;; game loop took a whopping 430,184 t-states, with over 400,000 of them
+;;; due to the call to the boardUpdate routine.  That is, updating the board
+;;; takes over SEVEN (!!!) interrupt cycles, with just over one whole
+;;; interrupt cycle being taken by updating the screen (which, as of this
+;;; writing, still operates by flushing the entire buffer to the LCD).
+;;;
+;;; In order to fit into one interrupt cycle, we would need to either speed
+;;; up the screenUpdate function in the screen.asm library or write custom
+;;; LCD code.  However, the part of updating the board excluding the call
+;;; to screenUpdate is clearly hogging the lion's share of the t-states,
+;;; so this is the part that needs the most work.  This part is also much more
+;;; convenient to fix than screen.asm.  In addition, scheduling each loop
+;;; iteration for two interrupt cycles instead of one seems like a reasonable
+;;; game speed, and this could be achieved without ever changing the screen.asm
+;;; code.
+
+;;;============================================================================
 ;;; HELPER ROUTINES ///////////////////////////////////////////////////////////
 ;;;============================================================================
 
