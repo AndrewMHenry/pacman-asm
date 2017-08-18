@@ -329,18 +329,56 @@ boardUpdateCells:
         ;; OUTPUT:
         ;;   <screen buffer> -- updated pictures drawn
         ;;
-        PUSH    BC                    ; STACK: [PC BC]
-        PUSH    DE                    ; STACK: [PC BC DE]
-        PUSH    HL                    ; STACK: [PC BC DE HL]
-        LD      BC, BOARD_DIMENSIONS  ; clear board footprint
-        LD      DE, BOARD_LOCATION    ;
-        CALL    drawClearRectangle    ;
-        LD      HL, boardDrawCell     ; draw all board cells
-        CALL    boardIter             ;
-        POP     HL                    ; STACK: [PC BC DE]
-        POP     DE                    ; STACK: [PC BC]
-        POP     BC                    ; STACK: [PC]
-        RET                           ; return
+        PUSH    BC                          ; STACK: [PC BC]
+        PUSH    DE                          ; STACK: [PC BC DE]
+        PUSH    HL                          ; STACK: [PC BC DE HL]
+        LD      BC, BOARD_DIMENSIONS        ; clear board footprint
+        LD      DE, BOARD_LOCATION          ;
+        CALL    drawClearRectangle          ;
+        LD      HL, boardUpdateSpriteCells  ; draw all board cells
+        CALL    boardSpriteIter             ;
+        POP     HL                          ; STACK: [PC BC DE]
+        POP     DE                          ; STACK: [PC BC]
+        POP     BC                          ; STACK: [PC]
+        RET                                 ; return
+
+boardUpdateSpriteCells:
+        ;; INPUT:
+        ;;   ACC -- sprite ID
+        ;;
+        ;; OUTPUT:
+        ;;   <screen buffer> -- cells updated around sprite
+        ;;
+        ;; Simple but inefficient implementation: draw all nine cells
+        ;; in square centered on cell containing sprite's upper left corner.
+        ;;
+        PUSH    BC                                ; STACK: [PC BC]
+        PUSH    DE                                ; STACK: [PC BC DE]
+        PUSH    HL                                ; STACK: [PC BC DE HL]
+        PUSH    IX                                ; STACK: [PC BC DE HL IX]
+        CALL    boardGetSpritePointer             ; IX = sprite pointer
+        LD      E, (IX+BOARD_SPRITE_COLUMN)       ; E, D = column, row
+        LD      D, (IX+BOARD_SPRITE_ROW)          ;
+        CALL    boardExtractLocationData          ; E, D = cell-wise location
+        DEC     E                                 ; E, D = upper left of square
+        DEC     D                                 ;
+        LD      H, D                              ; (save initial row in H)
+        LD      C, 3                              ; C (outer counter) = 3
+boardUpdateSpriteCells_outer:                     ;
+        LD      B, 3                              ; B (inner counter) = 3
+boardUpdateSpriteCells_inner:                     ;
+        CALL    boardDrawCell                     ; draw current cell
+        INC     D                                 ; advance to next row
+        DJNZ    boardUpdateSpriteCells_inner      ; repeat for each row
+        LD      D, H                              ; reset D (row)
+        INC     E                                 ; advance to next column
+        DEC     C                                 ; repeat for each column
+        JR      NZ, boardUpdateSpriteCells_outer  ;
+        POP     IX                                ; STACK: [PC BC DE HL]
+        POP     HL                                ; STACK: [PC BC DE
+        POP     DE                                ; STACK: [PC BC]
+        POP     BC                                ; STACK: [PC]
+        RET                                       ; return
 
 boardIter:
         ;; INPUT:
