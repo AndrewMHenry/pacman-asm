@@ -166,7 +166,7 @@ levelBoardSetup_ghostLoop:                   ;
         CALL    boardStageEmptyCell          ; stage empty cell
         CALL    boardStageSprite             ; stage ghost sprite
         DJNZ    levelBoardSetup_ghostLoop    ; repeat for each ghost
-        LD      B, LEVEL_NUM_EMPTY_CELLs     ; B = number of empty cells
+        LD      B, LEVEL_NUM_EMPTY_CELLS     ; B = number of empty cells
         LD      HL, levelEmptyCells          ; HL = empty cell array base
 levelBoardSetup_emptyLoop:                   ;
         LD      E, (HL)                      ; E = cell-wise column
