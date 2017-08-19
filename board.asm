@@ -46,20 +46,21 @@ boardInitialize:
         ;; This routine is NOT TO BE CONFUSED with boardInit, which is the
         ;; library-level setup function.
         ;;
-        PUSH    BC                       ; STACK: [PC BC]
-        PUSH    DE                       ; STACK: [PC BC DE]
-        PUSH    HL                       ; STACK: [PC BC DE HL]
-        LD      BC, BOARD_ARRAY_SIZE - 1 ; BC = array size - 1
-        LD      DE, boardArray + 1       ; DE = array base + 1
-        LD      HL, boardArray + 0       ; HL = array base
-        LD      (HL), BOARD_CELL_DOT     ; seed dot as initial value
-        LDIR                             ; propagate
-        XOR     A                        ; sprite count = 0
-        LD      (boardSpriteCount), A    ;
-        POP     HL                       ; STACK: [PC BC DE]
-        POP     DE                       ; STACK: [PC BC]
-        POP     BC                       ; STACK: [PC]
-        RET                              ; return
+        PUSH    BC                          ; STACK: [PC BC]
+        PUSH    DE                          ; STACK: [PC BC DE]
+        PUSH    HL                          ; STACK: [PC BC DE HL]
+        LD      BC, BOARD_ARRAY_SIZE - 1    ; BC = array size - 1
+        LD      DE, boardArray + 1          ; DE = array base + 1
+        LD      HL, boardArray + 0          ; HL = array base
+        LD      (HL), BOARD_CELL_DOT        ; seed dot as initial value
+        LDIR                                ; propagate
+        XOR     A                           ; sprite, touched cell count = 0
+        LD      (boardSpriteCount), A       ;
+        LD      (boardTouchedCellCount), A  ;
+        POP     HL                          ; STACK: [PC BC DE]
+        POP     DE                          ; STACK: [PC BC]
+        POP     BC                          ; STACK: [PC]
+        RET                                 ; return
 
 ;;;============================================================================
 ;;; STAGING INTERFACE /////////////////////////////////////////////////////////
@@ -206,17 +207,51 @@ boardMoveSprite:
         ;; OUTPUT:
         ;;   <board data> -- sprite moved
         ;;
+        PUSH    BC
         PUSH    DE
+        PUSH    HL
         PUSH    IX
         CALL    boardGetSpritePointer
         LD      A, D
         LD      E, (IX+BOARD_SPRITE_COLUMN)
         LD      D, (IX+BOARD_SPRITE_ROW)
+        LD      L, E
+        LD      H, D
         CALL    boardMoveDirection
+        OR      A
+        SBC     HL, DE
+;;         JR      NC, boardMoveSprite_skip
+;;         ADD     HL, DE
+;;         EX      DE, HL
+;;         OR      A
+;;         SBC     HL, DE
+;; boardMoveSprite_skip:
         LD      (IX+BOARD_SPRITE_COLUMN), E
         LD      (IX+BOARD_SPRITE_ROW), D
+        CALL    boardExtractLocationData
+boardMoveSprite_LR:
+        LD      A, L
+        OR      A
+        JR      Z, boardMoveSprite_UD
+        DEC     E
+        CALL    boardTouchCell
+        INC     E
+        CALL    boardTouchCell
+        INC     E
+        CALL    boardTouchCell
+        JR      boardMoveSprite_return
+boardMoveSprite_UD:
+        DEC     D
+        CALL    boardTouchCell
+        INC     D
+        CALL    boardTouchCell
+        INC     D
+        CALL    boardTouchCell
+boardMoveSprite_return:
         POP     IX
+        POP     HL
         POP     DE
+        POP     BC
         RET
 
 ;;; SPRITE INTERACTION.........................................................
@@ -346,6 +381,31 @@ boardUpdate:
 ;;; CELL HELPER ROUTINES //////////////////////////////////////////////////////
 ;;;============================================================================
 
+boardTouchCell:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- specified cell touched
+        ;;
+        PUSH    BC
+        PUSH    HL
+        LD      A, (boardTouchedCellCount)
+        LD      C, A
+        LD      B, 0
+        INC     A
+        LD      (boardTouchedCellCount), A
+        LD      HL, boardTouchedCells
+        ADD     HL, BC
+        ADD     HL, BC
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D
+        POP     HL
+        POP     BC
+        RET
+
 boardUpdateCells:
         ;; INPUT:
         ;;   <board data> -- determines cells to update, and how
@@ -353,11 +413,23 @@ boardUpdateCells:
         ;; OUTPUT:
         ;;   <screen buffer> -- updated pictures drawn
         ;;
+        LD      A, (boardTouchedCellCount)  ; ACC = touched cell count
+        OR      A                           ;
+        RET     Z                           ; return if no touched cells
         PUSH    BC                          ; STACK: [PC BC]
         PUSH    DE                          ; STACK: [PC BC DE]
         PUSH    HL                          ; STACK: [PC BC DE HL]
-        LD      HL, boardUpdateSpriteCells  ; draw all board cells
-        CALL    boardSpriteIter             ;
+        LD      B, A                        ; B = touched cell count
+        LD      HL, boardTouchedCells       ; HL = base of touched cells
+boardUpdateCells_loop:                      ;
+        LD      E, (HL)                     ; get row and column
+        INC     HL                          ;
+        LD      D, (HL)                     ;
+        INC     HL                          ;
+        CALL    boardDrawCell               ; draw the cell
+        DJNZ    boardUpdateCells_loop       ; repeat for each touched cell
+        XOR     A                           ; reset touched cell count
+        LD      (boardTouchedCellCount), A  ;
         POP     HL                          ; STACK: [PC BC DE]
         POP     DE                          ; STACK: [PC BC]
         POP     BC                          ; STACK: [PC]
@@ -447,9 +519,11 @@ boardDrawCell:
         PUSH    BC                    ; STACK: [PC BC]
         PUSH    DE                    ; STACK: [PC BC DE]
         PUSH    HL                    ; STACK: [PC BC DE HL]
-        LD      B, BOARD_CELL_HEIGHT  ; B = cell height
         CALL    boardGetCellPicture   ; HL = cell picture
         CALL    boardGetCellLocation  ; D, E = cell location
+        LD      BC, BOARD_CELL_DIMENSIONS
+        CALL    drawClearRectangle
+        LD      B, BOARD_CELL_HEIGHT  ; B = cell height
         CALL    drawPicture           ; draw the picture
         POP     HL                    ; STACK: [PC BC DE]
         POP     DE                    ; STACK: [PC BC]
@@ -825,8 +899,10 @@ boardCheckWall:
 #define boardArray              boardData
 #define boardSpriteCount        boardArray + BOARD_ARRAY_SIZE
 #define boardSprites            boardSpriteCount + BOARD_SPRITE_COUNT_SIZE
+#define boardTouchedCellCount   boardSprites + BOARD_SPRITES_SIZE
+#define boardTouchedCells       boardTouchedCellCount + 1
 
-#define boardDataEnd            boardSprites + BOARD_SPRITES_SIZE
+#define boardDataEnd            boardTouchedCells + (2 * 20)
 #define BOARD_DATA_SIZE         boardDataEnd - boardData
 
 ;;;============================================================================
