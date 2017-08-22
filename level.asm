@@ -38,7 +38,7 @@ levelPlay_loop:                                ;
         POP     DE                             ;
         JR      NC, levelPlay_debugSkip        ;
         LD      A, LEVEL_STATUS_QUIT           ;
-        LD      (levelStatus), A               ;
+        LD      (levelStatus), A
 levelPlay_debugSkip:                           ;
         ;;
         CALL    timerGet                       ; take time remaining mod 8

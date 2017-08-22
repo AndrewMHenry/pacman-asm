@@ -46,20 +46,9 @@ boardInitialize:
         ;; This routine is NOT TO BE CONFUSED with boardInit, which is the
         ;; library-level setup function.
         ;;
-        PUSH    BC                          ; STACK: [PC BC]
-        PUSH    DE                          ; STACK: [PC BC DE]
-        PUSH    HL                          ; STACK: [PC BC DE HL]
-        LD      BC, BOARD_ARRAY_SIZE - 1    ; BC = array size - 1
-        LD      DE, boardArray + 1          ; DE = array base + 1
-        LD      HL, boardArray + 0          ; HL = array base
-        LD      (HL), BOARD_CELL_DOT        ; seed dot as initial value
-        LDIR                                ; propagate
-        XOR     A                           ; sprite, touched cell count = 0
-        LD      (boardSpriteCount), A       ;
-        LD      (boardTouchedCellCount), A  ;
-        POP     HL                          ; STACK: [PC BC DE]
-        POP     DE                          ; STACK: [PC BC]
-        POP     BC                          ; STACK: [PC]
+        CALL    boardInitializeInternals    ; initialize board internals
+        LD      A, BOARD_CELL_DOT           ; fill board with dots
+        CALL    boardFill                   ;
         RET                                 ; return
 
 ;;;============================================================================
@@ -73,31 +62,9 @@ boardStageWallMap:
         ;; OUTPUT:
         ;;   (boardArray) -- cells specified by bitmap made walls
         ;;
-        PUSH    BC                          ; STACK: [PC BC]
-        PUSH    DE                          ; STACK: [PC BC DE]
-        PUSH    HL                          ; STACK: [PC BC DE HL]
-        LD      C, BOARD_MAP_SIZE           ; C = board map counter
-        LD      DE, boardArray              ; DE = base of board array
-boardStageWallMap_outer:                    ;
-        PUSH    HL                          ; STACK: [PC BC DE HL HL]
-        LD      B, 8                        ; B = bit counter
-        LD      L, (HL)                     ; L = map byte
-        LD      A, BOARD_CELL_WALL          ; ACC = wall
-boardStageWallMap_inner:                    ;
-        RLC     L                           ; rotate bit into carry
-        JR      NC, boardStageWallMap_skip  ; skip if bit reset (no wall)
-        LD      (DE), A                     ; load wall otherwise
-boardStageWallMap_skip:                     ;
-        INC     DE                          ; advance to next board array byte
-        DJNZ    boardStageWallMap_inner     ; repeat inner loop until byte done
-        POP     HL                          ; STACK: [PC BC DE HL]
-        INC     HL                          ; advance to next map byte
-        DEC     C                           ; repeat outer loop until map done
-        JR      NZ, boardStageWallMap_outer ;
-        POP     HL                          ; STACK: [PC BC DE]
-        POP     DE                          ; STACK: [PC BC]
-        POP     BC                          ; STACK: [PC]
-        RET                                 ; return
+        LD      A, BOARD_CELL_WALL  ; ACC = wall cell value
+        CALL    boardApplyMap       ; set cells to wall based on map
+        RET                         ; return
 
 boardStageEmptyCell:
         ;; INPUT:
@@ -108,8 +75,9 @@ boardStageEmptyCell:
         ;;   <board data> -- empty cell staged at (D, E)
         ;;
         PUSH    HL                      ; STACK: [PC HL]
-        CALL    boardGetCellAddress     ; cell = empty
-        LD      (HL), BOARD_CELL_EMPTY  ;
+        CALL    boardGetCellAddress     ; HL = cell address
+        LD      A, BOARD_CELL_EMPTY     ; ACC = EMPTY
+        CALL    boardSetCellValue       ; set cell D, E to EMPTY
         POP     HL                      ; STACK: [PC]
         RET                             ; return
 
@@ -125,20 +93,16 @@ boardStageSprite:
         ;; NOTE: The order in which sprites are staged determines the
         ;; indices to which they correspond.
         ;;
-        PUSH    DE                              ; STACK: [PC DE]
-        PUSH    IX                              ; STACK: [PC DE IX]
-        LD      A, (boardSpriteCount)           ; ACC = sprite count++
-        INC     A                               ;
-        LD      (boardSpriteCount), A           ;
-        DEC     A                               ;
-        CALL    boardGetSpritePointer           ;
-        CALL    boardGetCellLocation            ; D, E = location
-        LD      (IX+BOARD_SPRITE_COLUMN), E     ; set column
-        LD      (IX+BOARD_SPRITE_ROW), D        ; set row
-        LD      (IX+BOARD_SPRITE_PICTURE+0), L  ; set picture
-        LD      (IX+BOARD_SPRITE_PICTURE+1), H  ;
-        POP     IX                              ; STACK: [PC DE]
-        POP     DE                              ; STACK: [PC]
+        PUSH    BC                              ; STACK: [PC BC]
+        PUSH    IX                              ; STACK: [PC BC IX]
+        CALL    boardAddSprite                  ; add a sprite
+        CALL    boardGetSpritePointer           ; IX = sprite pointer
+        CALL    boardSetSpriteCell              ; set cell to D, E
+        LD      BC, 0                           ; set offsets to 0, 0
+        CALL    boardSetSpriteOffsets           ;
+        CALL    boardSetSpritePicture           ; set picture to HL
+        POP     IX                              ; STACK: [PC BC]
+        POP     BC                              ; STACK: [PC]
         RET                                     ; return
 
 ;;;============================================================================
@@ -146,6 +110,7 @@ boardStageSprite:
 ;;;============================================================================
 
 boardDeploy:
+        CALL    boardDeployInternals
         RET
 
 ;;;============================================================================
@@ -187,16 +152,18 @@ boardCheckMoveSprite:
         ;; OUTPUT:
         ;;   carry flag -- RESET if and only if the desired movement is allowed
         ;;
+        PUSH    BC
         PUSH    DE
         PUSH    IX
+        LD      C, D
         CALL    boardGetSpritePointer
-        LD      A, D
-        LD      E, (IX+BOARD_SPRITE_COLUMN)
-        LD      D, (IX+BOARD_SPRITE_ROW)
+        CALL    boardGetSpriteLocation
+        LD      A, C
         CALL    boardMoveDirection
         CALL    boardCheckLocationSpritely
         POP     IX
         POP     DE
+        POP     BC
         RET
 
 boardMoveSprite:
@@ -211,24 +178,17 @@ boardMoveSprite:
         PUSH    DE
         PUSH    HL
         PUSH    IX
+        LD      C, D
         CALL    boardGetSpritePointer
-        LD      A, D
-        LD      E, (IX+BOARD_SPRITE_COLUMN)
-        LD      D, (IX+BOARD_SPRITE_ROW)
+        CALL    boardGetSpriteLocation
         LD      L, E
         LD      H, D
+        LD      A, C
         CALL    boardMoveDirection
+        CALL    boardSetSpriteLocation
         OR      A
         SBC     HL, DE
-;;         JR      NC, boardMoveSprite_skip
-;;         ADD     HL, DE
-;;         EX      DE, HL
-;;         OR      A
-;;         SBC     HL, DE
-;; boardMoveSprite_skip:
-        LD      (IX+BOARD_SPRITE_COLUMN), E
-        LD      (IX+BOARD_SPRITE_ROW), D
-        CALL    boardExtractLocationData
+        CALL    boardGetSpriteCell
 boardMoveSprite_LR:
         LD      A, L
         OR      A
@@ -272,15 +232,14 @@ boardSpriteCollectItems:
         PUSH    DE                                  ; STACK: [PC BC DE]
         PUSH    HL                                  ; STACK: [PC BC DE HL]
         PUSH    IX                                  ; STACK: [PC BC DE HL IX]
-        CALL    boardGetSpritePointer               ; get pixel-wise location
-        LD      E, (IX+BOARD_SPRITE_COLUMN)         ;
-        LD      D, (IX+BOARD_SPRITE_ROW)            ;
-        CALL    boardExtractLocationData            ; get offsets, cell
+        CALL    boardGetSpritePointer               ; get sprite pointer
+        CALL    boardGetSpriteOffsets               ; B, C = offsets
         LD      A, C                                ; no dice if misaligned
         OR      B                                   ;
         JR      NZ, boardSpriteCollectItems_return  ;
-        CALL    boardGetCellAddress                 ; set cell empty
-        LD      (HL), BOARD_CELL_EMPTY              ;
+        CALL    boardGetSpriteCell                  ; D, E = cell
+        CALL    boardGetCellAddress                 ; HL = cell address
+        CALL    boardCollectCellItem                ; set cell empty
 boardSpriteCollectItems_return:                     ;
         POP     IX                                  ; STACK: [PC BC DE HL]
         POP     HL                                  ; STACK: [PC BC DE]
@@ -301,19 +260,20 @@ boardCheckSpriteCollision:
         ;; but this method is vastly simpler.
         ;;
         PUSH    DE                           ; STACK: [PC DE]
-        PUSH    IX                           ; STACK: [PC DE IX]
-        CALL    boardGetSpritePointer        ; D, E = sprite A location
-        LD      D, (IX+BOARD_SPRITE_ROW)     ;
-        LD      E, (IX+BOARD_SPRITE_COLUMN)  ;
-        LD      A, C                         ; ACC = OR of location differences
-        CALL    boardGetSpritePointer        ;
-        LD      A, D                         ;
-        SUB     (IX+BOARD_SPRITE_ROW)        ;
-        LD      D, A                         ;
-        LD      A, E                         ;
-        SUB     (IX+BOARD_SPRITE_COLUMN)     ;
-        OR      D                            ;
-        POP     IX                           ; STACK: [PC DE]
+        PUSH    HL                           ; STACK: [PC DE HL]
+        PUSH    IX                           ; STACK: [PC DE HL IX]
+        CALL    boardGetSpritePointer        ; IX = first sprite pointer
+        CALL    boardGetSpriteLocation       ; D, E = first sprite location
+        EX      DE, HL                       ; H, L = first sprite location
+        LD      A, C                         ; ACC = second sprite ID
+        CALL    boardGetSpritePointer        ; IX = second sprite pointer
+        CALL    boardGetSpriteLocation       ; D, E = second sprite location
+        OR      A                            ; compute location difference
+        SBC     HL, DE                       ;
+        LD      A, L                         ; clear carry, setting Z for HL
+        OR      H                            ;
+        POP     IX                           ; STACK: [PC DE HL]
+        POP     HL                           ; STACK: [PC DE]
         POP     DE                           ; STACK: [PC]
         RET     NZ                           ; return no carry if different
         SCF                                  ; return carry otherwise
@@ -328,7 +288,8 @@ boardGetDotCount:
         ;; OUTPUT:
         ;;   ACC -- number of dots on board
         ;;
-        JP      boardCountDots  ; compute dot count directly
+        CALL    boardItemCountRead  ; compute dot count directly
+        RET                         ; return
 
 ;;;============================================================================
 ;;; UPDATING INTERFACE ////////////////////////////////////////////////////////
@@ -365,21 +326,451 @@ boardUpdate:
         ;; OUTPUTS:
         ;;   <screen buffer> -- updated to reflect board contents
         ;;
-        PUSH    BC                    ; STACK: [PC BC]
-        PUSH    DE                    ; STACK: [PC BC DE]
-        PUSH    HL                    ; STACK: [PC BC DE HL]
+        CALL    boardUpdateInternals  ; call internal update hook
         CALL    boardUpdateCells      ; update cells
-        LD      HL, boardDrawSprite   ; draw all sprites
-        CALL    boardSpriteIter       ;
+        CALL    boardDrawSprites      ; draw all sprites
         CALL    screenUpdate          ; flush buffer to LCD
-        POP     HL                    ; STACK: [PC BC DE]
-        POP     DE                    ; STACK: [PC BC]
-        POP     BC                    ; STACK: [PC]
         RET                           ; return
 
 ;;;============================================================================
-;;; CELL HELPER ROUTINES //////////////////////////////////////////////////////
+;;;////////////////////////////////////////////////////////////////////////////
+;;;----------------------------------------------------------------------------
+;;; INTERNAL INTERFACE ////////////////////////////////////////////////////////
+;;;----------------------------------------------------------------------------
+;;;////////////////////////////////////////////////////////////////////////////
 ;;;============================================================================
+
+;;;============================================================================
+;;; EXTERNAL INTERFACE HOOKS //////////////////////////////////////////////////
+;;;============================================================================
+
+;;; In order to increase flexibility, we supply internal hooks for each of the
+;;; three "event" categories in the external interface: initializing,
+;;; deploying, and updating.  Each hook must be called at the BEGINNING of the
+;;; corresponding external interface routine to ensure correct operation.
+
+;;; As an example, this scheme allows initialization of the proposed item
+;;; counter to be done either when the board is initialized or when it is
+;;; deployed, depending on efficiency and ease-of-implementation
+;;; considerations.
+
+boardInitializeInternals:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- prepared for staging
+        ;;
+        XOR     A                           ; reset sprite, touched cell counts
+        LD      (boardSpriteCount), A       ;
+        LD      (boardTouchedCellCount), A  ;
+        RET                                 ; return
+
+boardDeployInternals:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- prepared for deploying
+        ;;
+        CALL    boardItemCountSetup
+        RET
+
+boardUpdateInternals:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- prepared for deploying
+        ;;
+        RET
+
+;;;============================================================================
+;;; BOARD LAYOUT INTERFACE ////////////////////////////////////////////////////
+;;;============================================================================
+
+boardFill:
+        ;; INPUT:
+        ;;   ACC -- cell value to load in all cells
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- all board cells given value in ACC
+        ;;
+        ;; NOTE: The cell value is not necessarily the actual content
+        ;; of the memory cell, but rather indicates the kind of thing
+        ;; to be loaded into the cells.
+        ;;
+        PUSH    BC                        ; STACK: [PC BC]
+        PUSH    DE                        ; STACK: [PC BC DE]
+        PUSH    HL                        ; STACK: [PC BC DE HL]
+        LD      BC, BOARD_ARRAY_SIZE - 1  ; BC = board size - 1
+        LD      DE, boardArray + 1        ; DE = board base + 1
+        LD      HL, boardArray + 0        ; HL = board base
+        LD      (HL), A                   ; seed initial value
+        LDIR                              ; propagate
+        POP     HL                        ; STACK: [PC BC DE]
+        POP     DE                        ; STACK: [PC BC]
+        POP     BC                        ; STACK: [PC]
+        RET                               ; return
+
+boardApplyMap:
+        ;; INPUT:
+        ;;   ACC -- cell value to load in specified cells
+        ;;   HL -- base of cell bitmap
+        ;;
+        ;; OUTPUT:
+        ;;   (boardArray) -- cells specified by bitmap given input value
+        ;;
+        PUSH    BC                          ; STACK: [PC BC]
+        PUSH    DE                          ; STACK: [PC BC DE]
+        PUSH    HL                          ; STACK: [PC BC DE HL]
+        LD      B, BOARD_MAP_SIZE           ; B = board map counter
+        LD      C, A                        ; C = cell value
+        LD      DE, boardArray              ; DE = base of board array
+boardApplyMap_outer:                        ;
+        PUSH    BC                          ; STACK: [PC BC DE HL BC]
+        PUSH    HL                          ; STACK: [PC BC DE HL BC HL]
+        LD      B, 8                        ; B = bit counter
+        LD      L, (HL)                     ; L = map byte
+boardApplyMap_inner:                        ;
+        RLC     L                           ; rotate bit into carry
+        EX      DE, HL                      ; set wall if carry (bit set)
+        LD      A, C                        ; set cell value to C
+        CALL    C, boardSetCellValue        ;
+        EX      DE, HL                      ;
+        INC     DE                          ; advance to next board array byte
+        DJNZ    boardApplyMap_inner         ; repeat inner loop until byte done
+        POP     HL                          ; STACK: [PC BC DE HL BC]
+        POP     BC                          ; STACK: [PC BC DE HL]
+        INC     HL                          ; advance to next map byte
+        DJNZ    boardApplyMap_outer         ; repeat outer loop until map done
+        POP     HL                          ; STACK: [PC BC DE]
+        POP     DE                          ; STACK: [PC BC]
+        POP     BC                          ; STACK: [PC]
+        RET                                 ; return
+
+;;;============================================================================
+;;; HIGH-LEVEL SPRITE INTERFACE ///////////////////////////////////////////////
+;;;============================================================================
+
+boardAddSprite:
+        ;; INPUT:
+        ;;   <board data> -- determines where to add sprite
+        ;;
+        ;; OUTPUT:
+        ;;   ACC -- sprite ID of added sprite
+        ;;
+        LD      A, (boardSpriteCount)  ; ACC = sprite count++
+        INC     A                      ;
+        LD      (boardSpriteCount), A  ;
+        DEC     A                      ;
+        RET                            ; return
+
+boardGetSpritePointer:
+        ;; INPUT:
+        ;;   ACC -- sprite ID
+        ;;
+        ;; OUTPUT:
+        ;;   IX -- base of data for sprite
+        ;;
+        ;; ASSUMPTIONS:
+        ;;   - Each sprite has four bytes of data.
+        ;;
+        PUSH    DE                ; STACK: [PC DE]
+        ADD     A, A              ; DE = ID * 4 (size of sprite data)
+        ADD     A, A              ;
+        LD      E, A              ;
+        LD      D, 0              ;
+        LD      IX, boardSprites  ; IX = boardSprites + DE
+        ADD     IX, DE            ;
+        POP     DE                ; STACK: [PC]
+        RET                       ; return
+
+boardDrawSprites:
+        ;; INPUT:
+        ;;   <board data> -- determines how/where to draw sprites
+        ;;
+        ;; OUTPUT:
+        ;;   <screen buffer> -- sprites drawn on screen
+        ;;
+        PUSH    HL                    ; STACK: [PC HL]
+        LD      HL, boardDrawSprite   ; draw all sprites
+        CALL    boardSpriteIter       ;
+        POP     HL                    ; STACK: [PC]
+        RET                           ; return
+
+;;;============================================================================
+;;; LOW-LEVEL SPRITE INTERFACE ////////////////////////////////////////////////
+;;;============================================================================
+
+;;; SPRITE GETTERS/SETTERS.....................................................
+
+boardGetSpriteCell:
+        ;; INPUT:
+        ;;   IX -- sprite pointer
+        ;;
+        ;; OUTPUT:
+        ;;   D -- cell-wise row of sprite
+        ;;   E -- cell-wise column of sprite
+        ;;
+        PUSH    BC
+        CALL    boardGetSpriteLocation
+        CALL    boardExtractLocationData
+        POP     BC
+        RET
+
+boardSetSpriteCell:
+        ;; INPUT:
+        ;;   IX -- sprite pointer
+        ;;   D -- cell-wise row for sprite
+        ;;   E -- cell-wise column for sprite
+        ;;
+        ;; OUTPUT:
+        ;;   (IX) -- cell-wise row and column set for sprite
+        ;;
+        PUSH    BC
+        PUSH    DE
+        CALL    boardGetSpriteOffsets
+        CALL    boardGetCellLocation
+        EX      DE, HL
+        ADD     HL, BC
+        EX      DE, HL
+        CALL    boardSetSpriteLocation
+        POP     DE
+        POP     BC
+        RET
+
+boardGetSpriteOffsets:
+        ;; INPUT:
+        ;;   IX -- sprite pointer
+        ;;
+        ;; OUTPUT:
+        ;;   B -- pixel-wise row offset of sprite
+        ;;   C -- pixel-wise column offset of sprite
+        ;;
+        PUSH    DE
+        CALL    boardGetSpriteLocation
+        CALL    boardExtractLocationData
+        POP     DE
+        RET
+
+boardSetSpriteOffsets:
+        ;; INPUT:
+        ;;   IX -- sprite pointer
+        ;;   B -- pixel-wise row offset for sprite
+        ;;   C -- pixel-wise column offset for sprite
+        ;;
+        ;; OUTPUT:
+        ;;   (IX) -- pixel-wise row and column offsets set for sprite
+        ;;
+        PUSH    DE
+        CALL    boardGetSpriteCell
+        CALL    boardGetCellLocation
+        EX      DE, HL
+        ADD     HL, BC
+        EX      DE, HL
+        CALL    boardSetSpriteLocation
+        POP     DE
+        RET
+
+boardGetSpriteLocation:
+        ;; INPUT:
+        ;;   IX -- sprite pointer
+        ;;
+        ;; OUTPUT:
+        ;;   D -- pixel-wise row of sprite
+        ;;   E -- pixel-wise column of sprite
+        ;;
+        LD      E, (IX+BOARD_SPRITE_COLUMN)     ; E = column
+        LD      D, (IX+BOARD_SPRITE_ROW)        ; D = row
+        RET                                     ; return
+
+boardSetSpriteLocation:
+        ;; INPUT:
+        ;;   IX -- sprite pointer
+        ;;   D -- pixel-wise row for sprite
+        ;;   E -- pixel-wise column for sprite
+        ;;
+        ;; OUTPUT:
+        ;;   (IX) -- pixel-wise location of sprite set to (D, E)
+        ;;
+        LD      (IX+BOARD_SPRITE_COLUMN), E     ; set column
+        LD      (IX+BOARD_SPRITE_ROW), D        ; set row
+        RET                                     ; return
+
+boardSetSpritePicture:
+        ;; INPUT:
+        ;;   IX -- sprite pointer
+        ;;   HL -- base of picture for sprite
+        ;;
+        ;; OUTPUT:
+        ;;   (IX) -- picture for sprite set to HL
+        ;;
+        LD      (IX+BOARD_SPRITE_PICTURE+0), L  ; set picture
+        LD      (IX+BOARD_SPRITE_PICTURE+1), H  ;
+        RET                                     ; return
+
+;;; LOCATION ROUTINES..........................................................
+
+boardMoveDirection:
+        ;; INPUT:
+        ;;   ACC -- direction
+        ;;   D -- row
+        ;;   E -- column
+        ;;
+        ;; OUTPUT:
+        ;;   D -- new row
+        ;;   E -- new column
+        ;;
+        PUSH    HL
+        LD      HL, boardMoveDirection_dispatch
+        ADD     A, A
+        ADD     A, L
+        LD      L, A
+        LD      A, H
+        ADC     A, 0
+        LD      H, A
+        CALL    boardMoveDirection_jumpHL
+        POP     HL
+        RET
+        ;;
+boardMoveDirection_jumpHL:
+        JP      (HL)
+        ;;
+boardMoveDirection_dispatch:
+        DEC     D
+        RET
+        INC     E
+        RET
+        INC     D
+        RET
+        DEC     E
+        RET
+
+boardCheckLocationSpritely:
+        ;; INPUT:
+        ;;   D -- pixel-wise row of sprite
+        ;;   E -- pixel-wise column of sprite
+        ;;   <board data> -- determines board layout
+        ;;
+        ;; OUTPUT:
+        ;;   <carry flag> -- RESET if and only if location is valid
+        ;;
+        PUSH    DE                                   ; STACK: [PC DE]
+        CALL    boardCheckWall                       ; FALSE if wall
+        JR      C, boardCheckLocationSpritely_return ;
+        LD      A, E                                 ; to top right 
+        ADD     A, BOARD_CELL_SIDE - 1               ;
+        LD      E, A                                 ;
+        CALL    boardCheckWall                       ; FALSE if wall
+        JR      C, boardCheckLocationSpritely_return ;
+        LD      A, D                                 ; to bottom right
+        ADD     A, BOARD_CELL_SIDE - 1               ;
+        LD      D, A                                 ;
+        CALL    boardCheckWall                       ; FALSE if wall
+        JR      C, boardCheckLocationSpritely_return ;
+        LD      A, E                                 ; to bottom left
+        SUB     BOARD_CELL_SIDE - 1                  ;
+        LD      E, A                                 ;
+        CALL    boardCheckWall                       ; FALSE if wall
+boardCheckLocationSpritely_return:                   ;
+        POP     DE                                   ; STACK: [PC]
+        RET                                          ; return
+
+;;;============================================================================
+;;; CELL INTERFACE ////////////////////////////////////////////////////////////
+;;;============================================================================
+
+;;; CELL VALUE ROUTINES........................................................
+
+boardSetCellEmpty:
+        ;; INPUT:
+        ;;   HL -- cell pointer
+        ;;
+        ;; OUTPUT:
+        ;;   (HL) -- cell set to empty
+        ;;
+        LD      (HL), BOARD_CELL_EMPTY
+        RET
+
+boardSetCellWall:
+        ;; INPUT:
+        ;;   HL -- cell pointer
+        ;;
+        ;; OUTPUT:
+        ;;   (HL) -- cell set to wall
+        ;;
+        LD      (HL), BOARD_CELL_WALL
+        RET
+
+boardSetCellValue:
+        ;; INPUT:
+        ;;   ACC -- cell value
+        ;;   HL -- cell pointer
+        ;;
+        ;; OUTPUT:
+        ;;   (HL) -- cell value set
+        ;;
+        LD      (HL), A
+        RET
+
+boardCollectCellItem:
+        ;; INPUT:
+        ;;   HL -- cell pointer
+        ;;
+        ;; OUTPUT:
+        ;;   (HL) -- cell emptied (if not already)
+        ;;   <board data> -- item (if present) collected
+        ;;
+        CALL    boardSetCellEmpty
+        RET
+
+;;; CELL LOCATION ROUTINES.....................................................
+
+boardGetCellLocation:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   D -- pixel-wise row
+        ;;   E -- pixel-wise column
+        ;;
+        PUSH    HL                  ; STACK: [PC HL]
+        LD      L, E                ; H, L = D, E
+        LD      H, D                ;
+        ADD     HL, HL              ; H, L = 6 * (D, E)
+        ADD     HL, DE              ;
+        ADD     HL, HL              ;
+        LD      DE, BOARD_LOCATION  ; H, L += BOARD_ROW, BOARD_COLUMN
+        ADD     HL, DE              ;
+        EX      DE, HL              ; D, E = H, L and H, L = D, E
+        POP     HL                  ; STACK: [PC]
+        RET                         ; return
+
+boardGetCellAddress:
+        ;; INPUT:
+        ;;   D -- cell-wise row of cell
+        ;;   E -- cell-wise column of cell
+        ;;
+        ;; OUTPUT:
+        ;;   HL -- address of cell in boardArray
+        ;;
+        PUSH    DE              ; STACK: [PC DE]
+        LD      HL, boardArray  ; HL = board array start
+        LD      A, D            ; ACC = cell-wise row
+        LD      D, 0            ; DE = E (cell-wise column)
+        ADD     HL, DE          ; HL += E
+        ADD     A, A            ; ACC = cell-wise row * 16 (BOARD_NUM_COLUMNS)
+        ADD     A, A            ;
+        ADD     A, A            ;
+        ADD     A, A            ;
+        LD      E, A            ; DE = ACC
+        ADD     HL, DE          ; HL += DE
+        POP     DE              ; STACK: [PC]
+        RET                     ; return
+
+;;; CELL TOUCH/UPDATE INTERFACE................................................
 
 boardTouchCell:
         ;; INPUT:
@@ -434,6 +825,218 @@ boardUpdateCells_loop:                      ;
         POP     DE                          ; STACK: [PC BC]
         POP     BC                          ; STACK: [PC]
         RET                                 ; return
+
+;;; ITEM COUNTING..............................................................
+
+boardItemCountSetup:
+        RET
+
+boardItemCountDecrement:
+        RET
+
+boardItemCountRead:
+        CALL    boardCountDots
+        RET
+
+;;;============================================================================
+;;; HELPER ROUTINES ///////////////////////////////////////////////////////////
+;;;============================================================================
+
+boardDrawCell:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;   <board data> -- determines image for cell
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- possibly affected
+        ;;   <screen data> -- image written
+        ;;
+        PUSH    BC                    ; STACK: [PC BC]
+        PUSH    DE                    ; STACK: [PC BC DE]
+        PUSH    HL                    ; STACK: [PC BC DE HL]
+        CALL    boardGetCellPicture   ; HL = cell picture
+        CALL    boardGetCellLocation  ; D, E = cell location
+        LD      BC, BOARD_CELL_DIMENSIONS
+        CALL    drawClearRectangle
+        LD      B, BOARD_CELL_HEIGHT  ; B = cell height
+        CALL    drawPicture           ; draw the picture
+        POP     HL                    ; STACK: [PC BC DE]
+        POP     DE                    ; STACK: [PC BC]
+        POP     BC                    ; STACK: [PC]
+        RET                           ; return
+
+boardGetCellPicture:
+        ;; INPUT:
+        ;;   D -- cell-wise row of cell
+        ;;   E -- cell-wise column of cell
+        ;;
+        ;; OUTPUT:
+        ;;   HL -- base of picture for cell
+        ;;
+        PUSH    DE                     ; STACK: [PC DE]
+        CALL    boardGetCellAddress    ; HL = address of cell
+        LD      A, (HL)                ; ACC = cell * 6 (cell picture size)
+        ADD     A, A                   ;
+        ADD     A, (HL)                ;
+        ADD     A, A                   ;
+        LD      HL, boardCellPictures  ;
+        LD      E, A                   ; HL += (DE = ACC)
+        LD      D, 0                   ;
+        ADD     HL, DE                 ;
+        POP     DE                     ; STACK: [PC]
+        RET                            ; return
+
+boardDivideCellSide:
+        ;; INPUT:
+        ;;   ACC -- value to take mod cell side
+        ;;
+        ;; OUTPUT:
+        ;;   ACC -- value mod cell side
+        ;;   B -- value // cell side
+        ;;
+        LD      B, -1
+boardDivideCellSide_loop:
+        INC     B
+        SUB     BOARD_CELL_SIDE
+        JR      NC, boardDivideCellSide_loop
+        ADD     A, BOARD_CELL_SIDE
+        RET
+
+boardCountDots:
+        ;; INPUT:
+        ;;   <board data> -- contains dots to be counted
+        ;;
+        ;; OUTPUT:
+        ;;   ACC -- number of dots on board
+        ;;
+        PUSH    BC                         ; STACK: [PC BC]
+        PUSH    HL                         ; STACK: [PC BC HL]
+        LD      A, BOARD_CELL_DOT          ; ACC = DOT for comparison
+        LD      BC, BOARD_ARRAY_SIZE << 8  ; B, C = size, 0
+        LD      HL, boardArray             ; HL = base of board array
+boardCountDots_loop:                       ;
+        CP      (HL)                       ; set Z if cell is dot
+        JR      NZ, boardCountDots_skip    ; skip if not
+        INC     C                          ; increment C otherwise
+boardCountDots_skip:                       ;
+        INC     HL                         ; advance HL to next cell
+        DJNZ    boardCountDots_loop        ; repeat for each cell
+        LD      A, C                       ; ACC = C (count)
+        POP     HL                         ; STACK: [PC BC]
+        POP     BC                         ; STACK: [PC]
+        RET                                ; return
+
+boardSpriteIter:
+        ;; INPUT:
+        ;;   HL -- address of callback routine to apply to each sprite
+        ;;
+        ;; OUTPUT:
+        ;;   <callback applied to each sprite>
+        ;;
+        LD      A, (boardSpriteCount)   ; ACC = sprite count
+        OR      A                       ; return if sprite count == 0
+        RET     Z                       ;
+        PUSH    BC                      ; STACK: [PC BC]
+        PUSH    DE                      ; STACK: [PC BC DE]
+        PUSH    IX                      ; STACK: [PC BC DE IX]
+        LD      B, A                    ; B (counter) = sprite count
+        LD      C, 0                    ; C (sprite index) = 0
+        LD      DE, BOARD_SPRITE_SIZE   ;
+        LD      IX, boardSprites        ;
+boardSpriteIter_loop:                   ;
+        LD      A, C                    ; ACC = sprite index
+        CALL    boardSpriteIter_jumpHL  ; call the callback routine
+        INC     C                       ; advance sprite index
+        ADD     IX, DE                  ; advance sprite pointer
+        DJNZ    boardSpriteIter_loop    ; repeat for each sprite index
+        POP     IX                      ; STACK: [PC BC DE]
+        POP     DE                      ; STACK: [PC BC]
+        POP     BC                      ; STACK: [PC]
+        RET                             ; return
+        ;;
+boardSpriteIter_jumpHL:
+        JP      (HL)
+
+boardDrawSprite:
+        ;; INPUT:
+        ;;   ACC -- index of sprite to draw
+        ;;   <board data> -- used to determine location and picture
+        ;;
+        ;; OUTPUT:
+        ;;   <screen buffer> -- sprite drawn in buffer
+        ;;
+        PUSH    BC                              ; STACK: [PC BC]
+        PUSH    DE                              ; STACK: [PC BC DE]
+        PUSH    HL                              ; STACK: [PC BC DE HL]
+        LD      B, BOARD_SPRITE_HEIGHT          ; B = sprite height
+        LD      E, (IX+BOARD_SPRITE_COLUMN)     ; E = column
+        LD      D, (IX+BOARD_SPRITE_ROW)        ; D = row
+        LD      L, (IX+BOARD_SPRITE_PICTURE+0)  ; HL = picture
+        LD      H, (IX+BOARD_SPRITE_PICTURE+1)  ;
+        CALL    drawPicture                     ; draw the picture
+        POP     HL                              ; STACK: [PC BC DE]
+        POP     DE                              ; STACK: [PC BC]
+        POP     BC                              ; STACK: [PC]
+        RET                                     ; return
+
+boardExtractLocationData:
+        ;; INPUT:
+        ;;   D -- pixel-wise row
+        ;;   E -- pixel-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   B -- pixel-wise row OFFSET within cell
+        ;;   C -- pixel-wise column OFFSET within cell
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;; 
+        LD      A, E
+        SUB     BOARD_COLUMN
+        CALL    boardDivideCellSide
+        LD      E, B
+        LD      C, A
+        LD      A, D
+        SUB     BOARD_ROW
+        CALL    boardDivideCellSide
+        LD      D, B
+        LD      B, A
+        RET
+
+boardCheckWall:
+        ;; INPUT:
+        ;;   D -- pixel-wise row
+        ;;   E -- pixel-wise column
+        ;;   <board data> -- determines wall layout
+        ;;
+        ;; OUTPUT:
+        ;;   <carry flag> -- set iff cell at location is wall
+        ;;
+        PUSH    BC                        ; STACK: [PC BC]
+        PUSH    DE                        ; STACK: [PC BC DE]
+        PUSH    HL                        ; STACK: [PC BC DE HL]
+        CALL    boardExtractLocationData  ; get cell and offsets
+        CALL    boardGetCellAddress       ; HL = cell address
+        LD      A, (HL)                   ; set carry iff cell is wall
+        SUB     BOARD_CELL_WALL           ;
+        SUB     1                         ;
+        POP     HL                        ; STACK: [PC BC DE]
+        POP     DE                        ; STACK: [PC BC]
+        POP     BC                        ; STACK: [PC]
+        RET                               ; return
+
+;;;============================================================================
+;;; CELL HELPER ROUTINES //////////////////////////////////////////////////////
+;;;============================================================================
+
+boardCountCellValue:
+        ;; INPUT:
+        ;;   ACC -- cell value to count
+        ;;
+        ;; OUTPUT:
+        ;;   ACC -- number of cells with given value
+        ;;
+        RET
 
 boardUpdateSpriteCells:
         ;; INPUT:
@@ -506,210 +1109,9 @@ boardIter_columnLoop:                  ;
 boardIter_jumpHL:                      ; subroutine to implement `CALL (HL)`
         JP      (HL)                   ;
 
-boardDrawCell:
-        ;; INPUT:
-        ;;   D -- cell-wise row
-        ;;   E -- cell-wise column
-        ;;   <board data> -- determines image for cell
-        ;;
-        ;; OUTPUT:
-        ;;   <board data> -- possibly affected
-        ;;   <screen data> -- image written
-        ;;
-        PUSH    BC                    ; STACK: [PC BC]
-        PUSH    DE                    ; STACK: [PC BC DE]
-        PUSH    HL                    ; STACK: [PC BC DE HL]
-        CALL    boardGetCellPicture   ; HL = cell picture
-        CALL    boardGetCellLocation  ; D, E = cell location
-        LD      BC, BOARD_CELL_DIMENSIONS
-        CALL    drawClearRectangle
-        LD      B, BOARD_CELL_HEIGHT  ; B = cell height
-        CALL    drawPicture           ; draw the picture
-        POP     HL                    ; STACK: [PC BC DE]
-        POP     DE                    ; STACK: [PC BC]
-        POP     BC                    ; STACK: [PC]
-        RET                           ; return
-
-boardGetCellLocation:
-        ;; INPUT:
-        ;;   D -- cell-wise row
-        ;;   E -- cell-wise column
-        ;;
-        ;; OUTPUT:
-        ;;   D -- pixel-wise row
-        ;;   E -- pixel-wise column
-        ;;
-        PUSH    HL                  ; STACK: [PC HL]
-        LD      L, E                ; H, L = D, E
-        LD      H, D                ;
-        ADD     HL, HL              ; H, L = 6 * (D, E)
-        ADD     HL, DE              ;
-        ADD     HL, HL              ;
-        LD      DE, BOARD_LOCATION  ; H, L += BOARD_ROW, BOARD_COLUMN
-        ADD     HL, DE              ;
-        EX      DE, HL              ; D, E = H, L and H, L = D, E
-        POP     HL                  ; STACK: [PC]
-        RET                         ; return
-
-boardGetCellAddress:
-        ;; INPUT:
-        ;;   D -- cell-wise row of cell
-        ;;   E -- cell-wise column of cell
-        ;;
-        ;; OUTPUT:
-        ;;   HL -- address of cell in boardArray
-        ;;
-        PUSH    DE              ; STACK: [PC DE]
-        LD      HL, boardArray  ; HL = board array start
-        LD      A, D            ; ACC = cell-wise row
-        LD      D, 0            ; DE = E (cell-wise column)
-        ADD     HL, DE          ; HL += E
-        ADD     A, A            ; ACC = cell-wise row * 16 (BOARD_NUM_COLUMNS)
-        ADD     A, A            ;
-        ADD     A, A            ;
-        ADD     A, A            ;
-        LD      E, A            ; DE = ACC
-        ADD     HL, DE          ; HL += DE
-        POP     DE              ; STACK: [PC]
-        RET                     ; return
-
-boardGetCellPicture:
-        ;; INPUT:
-        ;;   D -- cell-wise row of cell
-        ;;   E -- cell-wise column of cell
-        ;;
-        ;; OUTPUT:
-        ;;   HL -- base of picture for cell
-        ;;
-        PUSH    DE                     ; STACK: [PC DE]
-        CALL    boardGetCellAddress    ; HL = address of cell
-        LD      A, (HL)                ; ACC = cell * 6 (cell picture size)
-        ADD     A, A                   ;
-        ADD     A, (HL)                ;
-        ADD     A, A                   ;
-        LD      HL, boardCellPictures  ;
-        LD      E, A                   ; HL += (DE = ACC)
-        LD      D, 0                   ;
-        ADD     HL, DE                 ;
-        POP     DE                     ; STACK: [PC]
-        RET                            ; return
-
-boardDivideCellSide:
-        ;; INPUT:
-        ;;   ACC -- value to take mod cell side
-        ;;
-        ;; OUTPUT:
-        ;;   ACC -- value mod cell side
-        ;;   B -- value // cell side
-        ;;
-        LD      B, -1
-boardDivideCellSide_loop:
-        INC     B
-        SUB     BOARD_CELL_SIDE
-        JR      NC, boardDivideCellSide_loop
-        ADD     A, BOARD_CELL_SIDE
-        RET
-
-boardCountDots:
-        ;; INPUT:
-        ;;   <board data> -- contains dots to be counted
-        ;;
-        ;; OUTPUT:
-        ;;   ACC -- number of dots on board
-        ;;
-        PUSH    BC                         ; STACK: [PC BC]
-        PUSH    HL                         ; STACK: [PC BC HL]
-        LD      A, BOARD_CELL_DOT          ; ACC = DOT for comparison
-        LD      BC, BOARD_ARRAY_SIZE << 8  ; B, C = size, 0
-        LD      HL, boardArray             ; HL = base of board array
-boardCountDots_loop:                       ;
-        CP      (HL)                       ; set Z if cell is dot
-        JR      NZ, boardCountDots_skip    ; skip if not
-        INC     C                          ; increment C otherwise
-boardCountDots_skip:                       ;
-        INC     HL                         ; advance HL to next cell
-        DJNZ    boardCountDots_loop        ; repeat for each cell
-        LD      A, C                       ; ACC = C (count)
-        POP     HL                         ; STACK: [PC BC]
-        POP     BC                         ; STACK: [PC]
-        RET                                ; return
-
 ;;;============================================================================
 ;;; SPRITE HELPER ROUTINES ////////////////////////////////////////////////////
 ;;;============================================================================
-
-boardSpriteIter:
-        ;; INPUT:
-        ;;   HL -- address of callback routine to apply to each sprite
-        ;;
-        ;; OUTPUT:
-        ;;   <callback applied to each sprite>
-        ;;
-        LD      A, (boardSpriteCount)   ; ACC = sprite count
-        OR      A                       ; return if sprite count == 0
-        RET     Z                       ;
-        PUSH    BC                      ; STACK: [PC BC]
-        PUSH    DE                      ; STACK: [PC BC DE]
-        PUSH    IX                      ; STACK: [PC BC DE IX]
-        LD      B, A                    ; B (counter) = sprite count
-        LD      C, 0                    ; C (sprite index) = 0
-        LD      DE, BOARD_SPRITE_SIZE   ;
-        LD      IX, boardSprites        ;
-boardSpriteIter_loop:                   ;
-        LD      A, C                    ; ACC = sprite index
-        CALL    boardSpriteIter_jumpHL  ; call the callback routine
-        INC     C                       ; advance sprite index
-        ADD     IX, DE                  ; advance sprite pointer
-        DJNZ    boardSpriteIter_loop    ; repeat for each sprite index
-        POP     IX                      ; STACK: [PC BC DE]
-        POP     DE                      ; STACK: [PC BC]
-        POP     BC                      ; STACK: [PC]
-        RET                             ; return
-        ;;
-boardSpriteIter_jumpHL:
-        JP      (HL)
-
-boardDrawSprite:
-        ;; INPUT:
-        ;;   ACC -- index of sprite to draw
-        ;;   <board data> -- used to determine location and picture
-        ;;
-        ;; OUTPUT:
-        ;;   <screen buffer> -- sprite drawn in buffer
-        ;;
-        PUSH    BC                              ; STACK: [PC BC]
-        PUSH    DE                              ; STACK: [PC BC DE]
-        PUSH    HL                              ; STACK: [PC BC DE HL]
-        LD      B, BOARD_SPRITE_HEIGHT          ; B = sprite height
-        LD      E, (IX+BOARD_SPRITE_COLUMN)     ; E = column
-        LD      D, (IX+BOARD_SPRITE_ROW)        ; D = row
-        LD      L, (IX+BOARD_SPRITE_PICTURE+0)  ; HL = picture
-        LD      H, (IX+BOARD_SPRITE_PICTURE+1)  ;
-        CALL    drawPicture                     ; draw the picture
-        POP     HL                              ; STACK: [PC BC DE]
-        POP     DE                              ; STACK: [PC BC]
-        POP     BC                              ; STACK: [PC]
-        RET                                     ; return
-
-boardGetSpritePointer:
-        ;; INPUT:
-        ;;   ACC -- sprite ID
-        ;;
-        ;; OUTPUT:
-        ;;   IX -- base of data for sprite
-        ;;
-        ;; ASSUMPTIONS:
-        ;;   - Each sprite has four bytes of data.
-        ;;
-        PUSH    DE                ; STACK: [PC DE]
-        ADD     A, A              ; DE = ID * 4 (size of sprite data)
-        ADD     A, A              ;
-        LD      E, A              ;
-        LD      D, 0              ;
-        LD      IX, boardSprites  ; IX = boardSprites + DE
-        ADD     IX, DE            ;
-        POP     DE                ; STACK: [PC]
-        RET                       ; return
 
 boardGetSpriteLocationData:
         ;; INPUT:
@@ -735,116 +1137,6 @@ boardGetSpriteLocationData:
         LD      B, A
         POP     IX
         RET
-
-boardExtractLocationData:
-        ;; INPUT:
-        ;;   D -- pixel-wise row
-        ;;   E -- pixel-wise column
-        ;;
-        ;; OUTPUT:
-        ;;   B -- pixel-wise row OFFSET within cell
-        ;;   C -- pixel-wise column OFFSET within cell
-        ;;   D -- cell-wise row
-        ;;   E -- cell-wise column
-        ;; 
-        LD      A, E
-        SUB     BOARD_COLUMN
-        CALL    boardDivideCellSide
-        LD      E, B
-        LD      C, A
-        LD      A, D
-        SUB     BOARD_ROW
-        CALL    boardDivideCellSide
-        LD      D, B
-        LD      B, A
-        RET
-
-boardMoveDirection:
-        ;; INPUT:
-        ;;   ACC -- direction
-        ;;   D -- row
-        ;;   E -- column
-        ;;
-        ;; OUTPUT:
-        ;;   D -- new row
-        ;;   E -- new column
-        ;;
-        PUSH    HL
-        LD      HL, boardMoveDirection_dispatch
-        ADD     A, A
-        ADD     A, L
-        LD      L, A
-        LD      A, H
-        ADC     A, 0
-        LD      H, A
-        CALL    boardMoveDirection_jumpHL
-        POP     HL
-        RET
-        ;;
-boardMoveDirection_jumpHL:
-        JP      (HL)
-        ;;
-boardMoveDirection_dispatch:
-        DEC     D
-        RET
-        INC     E
-        RET
-        INC     D
-        RET
-        DEC     E
-        RET
-
-boardCheckLocationSpritely:
-        ;; INPUT:
-        ;;   D -- pixel-wise row of sprite
-        ;;   E -- pixel-wise column of sprite
-        ;;   <board data> -- determines board layout
-        ;;
-        ;; OUTPUT:
-        ;;   <carry flag> -- RESET if and only if location is valid
-        ;;
-        PUSH    DE                                   ; STACK: [PC DE]
-        CALL    boardCheckWall                       ; FALSE if wall
-        JR      C, boardCheckLocationSpritely_return ;
-        LD      A, E                                 ; to top right 
-        ADD     A, BOARD_CELL_SIDE - 1               ;
-        LD      E, A                                 ;
-        CALL    boardCheckWall                       ; FALSE if wall
-        JR      C, boardCheckLocationSpritely_return ;
-        LD      A, D                                 ; to bottom right
-        ADD     A, BOARD_CELL_SIDE - 1               ;
-        LD      D, A                                 ;
-        CALL    boardCheckWall                       ; FALSE if wall
-        JR      C, boardCheckLocationSpritely_return ;
-        LD      A, E                                 ; to bottom left
-        SUB     BOARD_CELL_SIDE - 1                  ;
-        LD      E, A                                 ;
-        CALL    boardCheckWall                       ; FALSE if wall
-boardCheckLocationSpritely_return:                   ;
-        POP     DE                                   ; STACK: [PC]
-        RET                                          ; return
-
-boardCheckWall:
-        ;; INPUT:
-        ;;   D -- pixel-wise row
-        ;;   E -- pixel-wise column
-        ;;   <board data> -- determines wall layout
-        ;;
-        ;; OUTPUT:
-        ;;   <carry flag> -- set iff cell at location is wall
-        ;;
-        PUSH    BC                        ; STACK: [PC BC]
-        PUSH    DE                        ; STACK: [PC BC DE]
-        PUSH    HL                        ; STACK: [PC BC DE HL]
-        CALL    boardExtractLocationData  ; get cell and offsets
-        CALL    boardGetCellAddress       ; HL = cell address
-        LD      A, (HL)                   ; set carry iff cell is wall
-        SUB     BOARD_CELL_WALL           ;
-        SUB     1                         ;
-        POP     HL                        ; STACK: [PC BC DE]
-        POP     DE                        ; STACK: [PC BC]
-        POP     BC                        ; STACK: [PC]
-        RET                               ; return
 
 ;;;============================================================================
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////
