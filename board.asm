@@ -1,4 +1,14 @@
 ;;;============================================================================
+;;; SETUP AND TEARDOWN ////////////////////////////////////////////////////////
+;;;============================================================================
+
+boardInit:
+        RET
+
+boardExit:
+        RET
+
+;;;============================================================================
 ;;; HIGH-LEVEL INTERFACE DESCRIPTION //////////////////////////////////////////
 ;;;============================================================================
 
@@ -46,7 +56,8 @@ boardInitialize:
         ;; This routine is NOT TO BE CONFUSED with boardInit, which is the
         ;; library-level setup function.
         ;;
-        CALL    boardInitializeInternals    ; initialize board internals
+        CALL    boardSetupArray             ; setup board array
+        CALL    boardSetupSprites           ; setup sprites
         LD      A, BOARD_CELL_DOT           ; fill board with dots
         CALL    boardFill                   ;
         RET                                 ; return
@@ -110,7 +121,6 @@ boardStageSprite:
 ;;;============================================================================
 
 boardDeploy:
-        CALL    boardDeployInternals
         RET
 
 ;;;============================================================================
@@ -288,8 +298,9 @@ boardGetDotCount:
         ;; OUTPUT:
         ;;   ACC -- number of dots on board
         ;;
-        CALL    boardItemCountRead  ; compute dot count directly
-        RET                         ; return
+        LD      A, BOARD_CELL_DOT    ; ACC = DOT
+        CALL    boardCountCellValue  ; ACC = count of DOTs in board
+        RET                          ; return
 
 ;;;============================================================================
 ;;; UPDATING INTERFACE ////////////////////////////////////////////////////////
@@ -326,7 +337,6 @@ boardUpdate:
         ;; OUTPUTS:
         ;;   <screen buffer> -- updated to reflect board contents
         ;;
-        CALL    boardUpdateInternals  ; call internal update hook
         CALL    boardUpdateCells      ; update cells
         CALL    boardDrawSprites      ; draw all sprites
         CALL    screenUpdate          ; flush buffer to LCD
@@ -341,53 +351,19 @@ boardUpdate:
 ;;;============================================================================
 
 ;;;============================================================================
-;;; EXTERNAL INTERFACE HOOKS //////////////////////////////////////////////////
+;;; BOARD ARRAY INTERFACE /////////////////////////////////////////////////////
 ;;;============================================================================
 
-;;; In order to increase flexibility, we supply internal hooks for each of the
-;;; three "event" categories in the external interface: initializing,
-;;; deploying, and updating.  Each hook must be called at the BEGINNING of the
-;;; corresponding external interface routine to ensure correct operation.
-
-;;; As an example, this scheme allows initialization of the proposed item
-;;; counter to be done either when the board is initialized or when it is
-;;; deployed, depending on efficiency and ease-of-implementation
-;;; considerations.
-
-boardInitializeInternals:
+boardSetupArray:
         ;; INPUT:
         ;;   <none>
         ;;
         ;; OUTPUT:
-        ;;   <board data> -- prepared for staging
+        ;;   <board data> -- array prepared for operations
         ;;
-        XOR     A                           ; reset sprite, touched cell counts
-        LD      (boardSpriteCount), A       ;
+        XOR     A                           ; reset touched cell count
         LD      (boardTouchedCellCount), A  ;
         RET                                 ; return
-
-boardDeployInternals:
-        ;; INPUT:
-        ;;   <none>
-        ;;
-        ;; OUTPUT:
-        ;;   <board data> -- prepared for deploying
-        ;;
-        CALL    boardItemCountSetup
-        RET
-
-boardUpdateInternals:
-        ;; INPUT:
-        ;;   <none>
-        ;;
-        ;; OUTPUT:
-        ;;   <board data> -- prepared for deploying
-        ;;
-        RET
-
-;;;============================================================================
-;;; BOARD LAYOUT INTERFACE ////////////////////////////////////////////////////
-;;;============================================================================
 
 boardFill:
         ;; INPUT:
@@ -449,9 +425,143 @@ boardApplyMap_inner:                        ;
         POP     BC                          ; STACK: [PC]
         RET                                 ; return
 
+boardCountCellValue:
+        ;; INPUT:
+        ;;   ACC -- cell value to count
+        ;;   <board data> -- contains cells to count
+        ;;
+        ;; OUTPUT:
+        ;;   ACC -- number of cells with given value
+        ;;
+        PUSH    BC                            ; STACK: [PC BC]
+        PUSH    HL                            ; STACK: [PC BC HL]
+        LD      BC, BOARD_ARRAY_SIZE << 8     ; B, C = size, 0
+        LD      HL, boardArray                ; HL = base of board array
+boardCountCellValue_loop:                     ;
+        CP      (HL)                          ; set Z if cell is dot
+        JR      NZ, boardCountCellValue_skip  ; skip if not
+        INC     C                             ; increment C otherwise
+boardCountCellValue_skip:                     ;
+        INC     HL                            ; advance HL to next cell
+        DJNZ    boardCountCellValue_loop      ; repeat for each cell
+        LD      A, C                          ; ACC = C (count)
+        POP     HL                            ; STACK: [PC BC]
+        POP     BC                            ; STACK: [PC]
+        RET                                   ; return
+
+boardGetCellAddress:
+        ;; INPUT:
+        ;;   D -- cell-wise row of cell
+        ;;   E -- cell-wise column of cell
+        ;;
+        ;; OUTPUT:
+        ;;   HL -- address of cell in boardArray
+        ;;
+        PUSH    DE              ; STACK: [PC DE]
+        LD      HL, boardArray  ; HL = board array start
+        LD      A, D            ; ACC = cell-wise row
+        LD      D, 0            ; DE = E (cell-wise column)
+        ADD     HL, DE          ; HL += E
+        ADD     A, A            ; ACC = cell-wise row * 16 (BOARD_NUM_COLUMNS)
+        ADD     A, A            ;
+        ADD     A, A            ;
+        ADD     A, A            ;
+        LD      E, A            ; DE = ACC
+        ADD     HL, DE          ; HL += DE
+        POP     DE              ; STACK: [PC]
+        RET                     ; return
+
+boardSetCellValue:
+        ;; INPUT:
+        ;;   ACC -- cell value
+        ;;   HL -- cell pointer
+        ;;
+        ;; OUTPUT:
+        ;;   (HL) -- cell value set
+        ;;
+        LD      (HL), A
+        RET
+
+boardCollectCellItem:
+        ;; INPUT:
+        ;;   HL -- cell pointer
+        ;;
+        ;; OUTPUT:
+        ;;   (HL) -- cell emptied (if not already)
+        ;;   <board data> -- item (if present) collected
+        ;;
+        LD      A, BOARD_CELL_EMPTY
+        CALL    boardSetCellValue
+        RET
+
+boardTouchCell:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- specified cell touched
+        ;;
+        PUSH    BC
+        PUSH    HL
+        LD      A, (boardTouchedCellCount)
+        LD      C, A
+        LD      B, 0
+        INC     A
+        LD      (boardTouchedCellCount), A
+        LD      HL, boardTouchedCells
+        ADD     HL, BC
+        ADD     HL, BC
+        LD      (HL), E
+        INC     HL
+        LD      (HL), D
+        POP     HL
+        POP     BC
+        RET
+
+boardUpdateCells:
+        ;; INPUT:
+        ;;   <board data> -- determines cells to update, and how
+        ;;
+        ;; OUTPUT:
+        ;;   <screen buffer> -- updated pictures drawn
+        ;;
+        LD      A, (boardTouchedCellCount)  ; ACC = touched cell count
+        OR      A                           ;
+        RET     Z                           ; return if no touched cells
+        PUSH    BC                          ; STACK: [PC BC]
+        PUSH    DE                          ; STACK: [PC BC DE]
+        PUSH    HL                          ; STACK: [PC BC DE HL]
+        LD      B, A                        ; B = touched cell count
+        LD      HL, boardTouchedCells       ; HL = base of touched cells
+boardUpdateCells_loop:                      ;
+        LD      E, (HL)                     ; get row and column
+        INC     HL                          ;
+        LD      D, (HL)                     ;
+        INC     HL                          ;
+        CALL    boardDrawCell               ; draw the cell
+        DJNZ    boardUpdateCells_loop       ; repeat for each touched cell
+        XOR     A                           ; reset touched cell count
+        LD      (boardTouchedCellCount), A  ;
+        POP     HL                          ; STACK: [PC BC DE]
+        POP     DE                          ; STACK: [PC BC]
+        POP     BC                          ; STACK: [PC]
+        RET                                 ; return
+
 ;;;============================================================================
-;;; HIGH-LEVEL SPRITE INTERFACE ///////////////////////////////////////////////
+;;; SPRITE INTERFACE //////////////////////////////////////////////////////////
 ;;;============================================================================
+
+boardSetupSprites:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- sprite data prepared for operations
+        ;;
+        XOR     A                      ; reset sprite count
+        LD      (boardSpriteCount), A  ;
+        RET                            ; return
 
 boardAddSprite:
         ;; INPUT:
@@ -485,25 +595,6 @@ boardGetSpritePointer:
         ADD     IX, DE            ;
         POP     DE                ; STACK: [PC]
         RET                       ; return
-
-boardDrawSprites:
-        ;; INPUT:
-        ;;   <board data> -- determines how/where to draw sprites
-        ;;
-        ;; OUTPUT:
-        ;;   <screen buffer> -- sprites drawn on screen
-        ;;
-        PUSH    HL                    ; STACK: [PC HL]
-        LD      HL, boardDrawSprite   ; draw all sprites
-        CALL    boardSpriteIter       ;
-        POP     HL                    ; STACK: [PC]
-        RET                           ; return
-
-;;;============================================================================
-;;; LOW-LEVEL SPRITE INTERFACE ////////////////////////////////////////////////
-;;;============================================================================
-
-;;; SPRITE GETTERS/SETTERS.....................................................
 
 boardGetSpriteCell:
         ;; INPUT:
@@ -610,7 +701,22 @@ boardSetSpritePicture:
         LD      (IX+BOARD_SPRITE_PICTURE+1), H  ;
         RET                                     ; return
 
-;;; LOCATION ROUTINES..........................................................
+boardDrawSprites:
+        ;; INPUT:
+        ;;   <board data> -- determines how/where to draw sprites
+        ;;
+        ;; OUTPUT:
+        ;;   <screen buffer> -- sprites drawn on screen
+        ;;
+        PUSH    HL                    ; STACK: [PC HL]
+        LD      HL, boardDrawSprite   ; draw all sprites
+        CALL    boardSpriteIter       ;
+        POP     HL                    ; STACK: [PC]
+        RET                           ; return
+
+;;;============================================================================
+;;; LOCATION INTERFACE ////////////////////////////////////////////////////////
+;;;============================================================================
 
 boardMoveDirection:
         ;; INPUT:
@@ -677,56 +783,6 @@ boardCheckLocationSpritely_return:                   ;
         POP     DE                                   ; STACK: [PC]
         RET                                          ; return
 
-;;;============================================================================
-;;; CELL INTERFACE ////////////////////////////////////////////////////////////
-;;;============================================================================
-
-;;; CELL VALUE ROUTINES........................................................
-
-boardSetCellEmpty:
-        ;; INPUT:
-        ;;   HL -- cell pointer
-        ;;
-        ;; OUTPUT:
-        ;;   (HL) -- cell set to empty
-        ;;
-        LD      (HL), BOARD_CELL_EMPTY
-        RET
-
-boardSetCellWall:
-        ;; INPUT:
-        ;;   HL -- cell pointer
-        ;;
-        ;; OUTPUT:
-        ;;   (HL) -- cell set to wall
-        ;;
-        LD      (HL), BOARD_CELL_WALL
-        RET
-
-boardSetCellValue:
-        ;; INPUT:
-        ;;   ACC -- cell value
-        ;;   HL -- cell pointer
-        ;;
-        ;; OUTPUT:
-        ;;   (HL) -- cell value set
-        ;;
-        LD      (HL), A
-        RET
-
-boardCollectCellItem:
-        ;; INPUT:
-        ;;   HL -- cell pointer
-        ;;
-        ;; OUTPUT:
-        ;;   (HL) -- cell emptied (if not already)
-        ;;   <board data> -- item (if present) collected
-        ;;
-        CALL    boardSetCellEmpty
-        RET
-
-;;; CELL LOCATION ROUTINES.....................................................
-
 boardGetCellLocation:
         ;; INPUT:
         ;;   D -- cell-wise row
@@ -748,83 +804,31 @@ boardGetCellLocation:
         POP     HL                  ; STACK: [PC]
         RET                         ; return
 
-boardGetCellAddress:
-        ;; INPUT:
-        ;;   D -- cell-wise row of cell
-        ;;   E -- cell-wise column of cell
-        ;;
-        ;; OUTPUT:
-        ;;   HL -- address of cell in boardArray
-        ;;
-        PUSH    DE              ; STACK: [PC DE]
-        LD      HL, boardArray  ; HL = board array start
-        LD      A, D            ; ACC = cell-wise row
-        LD      D, 0            ; DE = E (cell-wise column)
-        ADD     HL, DE          ; HL += E
-        ADD     A, A            ; ACC = cell-wise row * 16 (BOARD_NUM_COLUMNS)
-        ADD     A, A            ;
-        ADD     A, A            ;
-        ADD     A, A            ;
-        LD      E, A            ; DE = ACC
-        ADD     HL, DE          ; HL += DE
-        POP     DE              ; STACK: [PC]
-        RET                     ; return
+;;;============================================================================
+;;; BOARD LAYOUT INTERFACE ////////////////////////////////////////////////////
+;;;============================================================================
+
+;;;============================================================================
+;;; HIGH-LEVEL SPRITE INTERFACE ///////////////////////////////////////////////
+;;;============================================================================
+
+;;;============================================================================
+;;; LOW-LEVEL SPRITE INTERFACE ////////////////////////////////////////////////
+;;;============================================================================
+
+;;; SPRITE GETTERS/SETTERS.....................................................
+
+;;; LOCATION ROUTINES..........................................................
+
+;;;============================================================================
+;;; CELL INTERFACE ////////////////////////////////////////////////////////////
+;;;============================================================================
+
+;;; CELL VALUE ROUTINES........................................................
+
+;;; CELL LOCATION ROUTINES.....................................................
 
 ;;; CELL TOUCH/UPDATE INTERFACE................................................
-
-boardTouchCell:
-        ;; INPUT:
-        ;;   D -- cell-wise row
-        ;;   E -- cell-wise column
-        ;;
-        ;; OUTPUT:
-        ;;   <board data> -- specified cell touched
-        ;;
-        PUSH    BC
-        PUSH    HL
-        LD      A, (boardTouchedCellCount)
-        LD      C, A
-        LD      B, 0
-        INC     A
-        LD      (boardTouchedCellCount), A
-        LD      HL, boardTouchedCells
-        ADD     HL, BC
-        ADD     HL, BC
-        LD      (HL), E
-        INC     HL
-        LD      (HL), D
-        POP     HL
-        POP     BC
-        RET
-
-boardUpdateCells:
-        ;; INPUT:
-        ;;   <board data> -- determines cells to update, and how
-        ;;
-        ;; OUTPUT:
-        ;;   <screen buffer> -- updated pictures drawn
-        ;;
-        LD      A, (boardTouchedCellCount)  ; ACC = touched cell count
-        OR      A                           ;
-        RET     Z                           ; return if no touched cells
-        PUSH    BC                          ; STACK: [PC BC]
-        PUSH    DE                          ; STACK: [PC BC DE]
-        PUSH    HL                          ; STACK: [PC BC DE HL]
-        LD      B, A                        ; B = touched cell count
-        LD      HL, boardTouchedCells       ; HL = base of touched cells
-boardUpdateCells_loop:                      ;
-        LD      E, (HL)                     ; get row and column
-        INC     HL                          ;
-        LD      D, (HL)                     ;
-        INC     HL                          ;
-        CALL    boardDrawCell               ; draw the cell
-        DJNZ    boardUpdateCells_loop       ; repeat for each touched cell
-        XOR     A                           ; reset touched cell count
-        LD      (boardTouchedCellCount), A  ;
-        POP     HL                          ; STACK: [PC BC DE]
-        POP     DE                          ; STACK: [PC BC]
-        POP     BC                          ; STACK: [PC]
-        RET                                 ; return
 
 ;;; ITEM COUNTING..............................................................
 
@@ -842,6 +846,50 @@ boardItemCountRead:
 ;;; HELPER ROUTINES ///////////////////////////////////////////////////////////
 ;;;============================================================================
 
+boardDrawCellCustom:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- possibly affected
+        ;;   <screen data> -- image written
+        ;;
+        LD      A, (HL)         ; ACC = b[0][0]
+        AND     B               ; ACC = b[0][0] AND m[0]
+        OR      (IX+0)          ; ACC = (b[0][0] AND m[0]) OR p[0][0]
+        LD      (HL), A         ; b[0][0] = (b[0][0] AND m[0]) OR p[0][0]
+        INC     HL
+        LD      A, (HL)
+        AND     C
+        OR      (IX+1)
+        LD      (HL), A
+        ADD     HL, DE
+        RET
+
+        ;; Suppose BC is mask, DE = buffer pointer, and HL = image pointer.
+        ;;
+        ;; (b AND m) OR p == (b OR p) AND (m or p)
+        ;;
+        LD      A, (DE)
+        AND     B
+        OR      (HL)
+        LD      (DE), A
+        INC     HL
+        INC     DE
+        LD      A, (DE)
+        AND     C
+        OR      (HL)
+        LD      (DE), A
+        INC     HL
+        LD      A, L
+        ADD     A, 11
+        LD      L, A
+        LD      A, H
+        ADC     A, 0
+        LD      H, A
+        RET
+
 boardDrawCell:
         ;; INPUT:
         ;;   D -- cell-wise row
@@ -855,16 +903,65 @@ boardDrawCell:
         PUSH    BC                    ; STACK: [PC BC]
         PUSH    DE                    ; STACK: [PC BC DE]
         PUSH    HL                    ; STACK: [PC BC DE HL]
+        CALL    boardEraseCell        ; erase background
         CALL    boardGetCellPicture   ; HL = cell picture
         CALL    boardGetCellLocation  ; D, E = cell location
-        LD      BC, BOARD_CELL_DIMENSIONS
-        CALL    drawClearRectangle
         LD      B, BOARD_CELL_HEIGHT  ; B = cell height
         CALL    drawPicture           ; draw the picture
         POP     HL                    ; STACK: [PC BC DE]
         POP     DE                    ; STACK: [PC BC]
         POP     BC                    ; STACK: [PC]
         RET                           ; return
+
+boardEraseCell:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   <screen data> -- cell footprint erased
+        ;;
+        PUSH    BC
+        PUSH    DE
+        LD      BC, BOARD_CELL_DIMENSIONS
+        CALL    boardGetCellLocation
+        CALL    drawClearRectangle
+        POP     DE
+        POP     BC
+        RET
+        ;;
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+        LD      HL, $FF << 1
+        LD      A, E
+        RRCA
+        JR      C, $+2+1
+        ADD     HL, HL
+        RRCA
+        JR      C, $+2+2
+        ADD     HL, HL
+        ADD     HL, HL
+        RRCA
+        JR      C, $+2+4
+        ADD     HL, HL
+        ADD     HL, HL
+        ADD     HL, HL
+        ADD     HL, HL
+        LD      C, L
+        LD      B, H
+        LD      L, D
+        LD      H, 0
+        ADD     HL, HL
+        ADD     HL, HL
+        LD      E, L
+        LD      D, H
+        ADD     HL, HL
+        ADD     HL, DE
+        POP     HL
+        POP     DE
+        POP     BC
+        RET
 
 boardGetCellPicture:
         ;; INPUT:
@@ -1028,15 +1125,6 @@ boardCheckWall:
 ;;;============================================================================
 ;;; CELL HELPER ROUTINES //////////////////////////////////////////////////////
 ;;;============================================================================
-
-boardCountCellValue:
-        ;; INPUT:
-        ;;   ACC -- cell value to count
-        ;;
-        ;; OUTPUT:
-        ;;   ACC -- number of cells with given value
-        ;;
-        RET
 
 boardUpdateSpriteCells:
         ;; INPUT:
@@ -1226,26 +1314,3 @@ boardCellPictureDot:
         .db     01110000b
         .db     00000000b
         .db     00000000b
-
-;;;============================================================================
-;;; SETUP AND TEARDOWN ////////////////////////////////////////////////////////
-;;;============================================================================
-        
-boardInit:
-        RET
-
-boardExit:
-        RET
-
-;;;============================================================================
-;;; ABSTRACT INTERFACE ////////////////////////////////////////////////////////
-;;;============================================================================
-
-boardSetSprite:
-        ;; INPUT:
-        ;;   ACC -- sprite ID
-        ;;
-        ;; OUTPUT:
-        ;;   <board data, registers> -- current sprite set
-        ;;
-        RET
