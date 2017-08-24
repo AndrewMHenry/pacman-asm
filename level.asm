@@ -446,12 +446,12 @@ levelGhostPicture:
 ;;;============================================================================
 
 #define levelStatus                     levelData
-#define levelPacmanDirection            levelStatus + 1
-#define levelPacmanNextDirection        levelPacmanDirection + 1
-#define levelGhostDirections            levelPacmanNextDirection + 1
+#define levelPacmanDirection            levelData+1
+#define levelPacmanNextDirection        levelData+1+1
+#define levelGhostDirections            levelData+1+1+1
 
-#define levelDataEnd                    levelGhostDirections + LEVEL_NUM_GHOSTS
-#define LEVEL_DATA_SIZE                 levelDataEnd - levelData
+#define levelDataEnd                    levelData+1+1+1+LEVEL_NUM_GHOSTS
+#define LEVEL_DATA_SIZE                 levelDataEnd-levelData
 
 ;;;============================================================================
 ;;; SETUP AND TEARDOWN ////////////////////////////////////////////////////////
