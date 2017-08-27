@@ -805,6 +805,31 @@ boardGetCellLocation:
         RET                         ; return
 
 ;;;============================================================================
+;;; CUSTOM CELL INTERFACE /////////////////////////////////////////////////////
+;;;============================================================================
+
+boardGetCellBackground:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   HL -- start of cell's background image
+        ;;
+        RET
+
+boardGetCellForeground:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   HL -- start of cell's foreground image
+        ;;
+        RET
+
+
+;;;============================================================================
 ;;; BOARD LAYOUT INTERFACE ////////////////////////////////////////////////////
 ;;;============================================================================
 
