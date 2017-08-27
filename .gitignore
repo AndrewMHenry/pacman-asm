@@ -2,3 +2,8 @@ pacman-app.8xk
 pacman-app.asm
 pacman-app.hex
 pacman-app.lst
+test/pactest-app.8xk
+test/pactest-app.asm
+test/pactest-app.hex
+test/pactest-app.lst
+*~

@@ -1,0 +1,15 @@
+: main-file pactest.asm
+: entry-point main
+: app-file pactest-app.asm
+: app-name PacTest
+
+: library
+  interrupt.asm
+  keyboard.asm
+  screen.asm
+  draw.asm
+  write.asm
+  terminal.asm
+  test.asm
+
+: resource fontSBF.asm

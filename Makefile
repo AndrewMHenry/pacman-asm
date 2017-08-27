@@ -3,7 +3,7 @@ NAME = pacman-app
 MAIN_FILE = main.asm
 EXECUTABLE = $(NAME).8xk
 
-.PHONY: clean publish
+.PHONY: clean publish test
 
 
 $(EXECUTABLE): $(MAIN_FILE)
@@ -16,3 +16,6 @@ clean:
 
 publish: $(EXECUTABLE)
 	cp $(EXECUTABLE) $(PUBLISH_DIR)
+
+test:
+	cd test; zapp

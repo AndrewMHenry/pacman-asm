@@ -1,0 +1,3 @@
+main:
+        CALL    testMain
+        RET
