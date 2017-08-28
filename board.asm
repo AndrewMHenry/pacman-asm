@@ -808,6 +808,41 @@ boardGetCellLocation:
 ;;; CUSTOM CELL INTERFACE /////////////////////////////////////////////////////
 ;;;============================================================================
 
+boardRedrawSprite:
+        ;; INPUT:
+        ;;   ACC -- direction in which sprite was moved
+        ;;   IX -- sprite pointer
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- graphical data udpated to reflect movement
+        ;;
+        RET
+
+boardStampCell:
+        ;; INPUT:
+        ;;   D -- cell-wise row
+        ;;   E -- cell-wise column
+        ;;
+        ;; OUTPUT:
+        ;;   <LCD> -- cell background and foreground stamped onto LCD
+        ;;
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+        LD      B, BOARD_CELL_HEIGHT
+boardStampCell_loop:
+        LD      A, (DE)
+        OR      (HL)
+        INC     DE
+        INC     HL
+        CALL    0000Bh
+        OUT     (011h), A
+        DJNZ    boardStampCell_loop
+        POP     HL
+        POP     DE
+        POP     BC
+        RET
+
 boardGetCellBackground:
         ;; INPUT:
         ;;   D -- cell-wise row

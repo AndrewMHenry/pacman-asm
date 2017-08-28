@@ -56,6 +56,8 @@
 ;;;         get background from v bits
 ;;;         get foreground index from f bits
 ;;;         get foreground picture from foreground index
+;;;         stamp background and foreground onto LCD
+
 sixBlit:
         ;; <set LCD row and column>
 sixBlit_loop:
