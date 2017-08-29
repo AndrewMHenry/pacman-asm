@@ -33,7 +33,7 @@ levelPlay_loop:                                ;
         ;;
         CALL    timerGet                       ;
         PUSH    DE                             ;
-        LD      DE, -8                         ;
+        LD      DE, -LEVEL_TICKS               ;
         ADD     HL, DE                         ;
         POP     DE                             ;
         JR      NC, levelPlay_debugSkip        ;
@@ -49,7 +49,7 @@ levelPlay_debugSkip:                           ;
         CALL    timerSet                       ;
         CALL    timerWait                      ;
 levelPlay_skipWait:                            ;
-        LD      HL, 8                          ;
+        LD      HL, LEVEL_TICKS                ;
         CALL    timerSet                       ;
         CALL    boardUpdate                    ; draw and flush board
         CALL    keyboardRead                   ; ACC = keypress
@@ -67,6 +67,8 @@ levelPlay_skipWait:                            ;
 ;;;============================================================================
 ;;; TIMING CONSIDERATIONS /////////////////////////////////////////////////////
 ;;;============================================================================
+
+#define LEVEL_TICKS     4
 
 ;;; Given that the only portable, independent timing mechanism is the ~110 Hz
 ;;; interrupt clock, 1/110 seconds seems to be the minimum amount of time
