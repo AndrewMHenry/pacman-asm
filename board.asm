@@ -820,8 +820,10 @@ boardRedrawSprite:
 
 boardStampCell:
         ;; INPUT:
-        ;;   D -- cell-wise row
-        ;;   E -- cell-wise column
+        ;;   BC -- base of background image
+        ;;   D -- pixel-wise row
+        ;;   E -- 6p-wise column
+        ;;   HL -- base of foreground image
         ;;
         ;; OUTPUT:
         ;;   <LCD> -- cell background and foreground stamped onto LCD
