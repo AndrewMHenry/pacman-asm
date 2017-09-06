@@ -42,10 +42,10 @@ levelPlay_loop:                                ;
 levelPlay_debugSkip:                           ;
         ;;
         CALL    timerGet                       ; take time remaining mod 8
-        LD      H, 0                           ;
+;        LD      H, 0                           ;
         LD      A, L                           ;
         AND     7                              ;
-        LD      L, A                           ;
+;        LD      L, A                           ;
         CALL    timerSet                       ;
         CALL    timerWait                      ;
 levelPlay_skipWait:                            ;
@@ -68,7 +68,7 @@ levelPlay_skipWait:                            ;
 ;;; TIMING CONSIDERATIONS /////////////////////////////////////////////////////
 ;;;============================================================================
 
-#define LEVEL_TICKS     4
+#define LEVEL_TICKS     4 * BOARD_MOVE_INCREMENT
 
 ;;; Given that the only portable, independent timing mechanism is the ~110 Hz
 ;;; interrupt clock, 1/110 seconds seems to be the minimum amount of time
@@ -217,6 +217,10 @@ levelGhostsSetup:
 
 ;;; UPDATING...................................................................
 
+#define LEVEL_NUM_MOVE_INCREMENTS       4
+level_moveIncrements:
+        .db     1, 2, 3, 6
+
 levelHandleKeypress:
         ;; INPUT:
         ;;   ACC -- keypress
@@ -224,6 +228,8 @@ levelHandleKeypress:
         ;; OUTPUT:
         ;;   <level data> -- updated based on keypress
         ;;
+        CP      skMode
+        JR      Z, levelHandleKeypress_mode
         CP      skClear                        ; CLEAR dispatch
         JR      Z, levelHandleKeypress_clear   ;
         CP      skUp                           ; UP dispatch
@@ -235,6 +241,25 @@ levelHandleKeypress:
         CP      skLeft                         ; LEFT dispatch
         JR      Z, levelHandleKeypress_left    ;
         RET                                    ; return
+        ;;
+levelHandleKeypress_mode:
+        PUSH    DE
+        PUSH    HL
+        LD      A, (levelIncrementIndex)
+        INC     A
+        AND     LEVEL_NUM_MOVE_INCREMENTS - 1
+        LD      (levelIncrementIndex), A
+        LD      HL, level_moveIncrements
+        LD      E, A
+        LD      D, 0
+        ADD     HL, DE
+        LD      A, (HL)
+        LD      (boardMoveIncrement), A
+        LD      A, (boardMoveIncrement)
+        LD      A, (boardDataEnd)
+        POP     HL
+        POP     DE
+        RET
         ;;
 levelHandleKeypress_clear:
         LD      A, LEVEL_STATUS_QUIT           ; status = QUIT
@@ -452,7 +477,9 @@ levelGhostPicture:
 #define levelPacmanNextDirection        levelData+1+1
 #define levelGhostDirections            levelData+1+1+1
 
-#define levelDataEnd                    levelData+1+1+1+LEVEL_NUM_GHOSTS
+#define levelIncrementIndex             levelData+1+1+1+LEVEL_NUM_GHOSTS
+#define levelDataEnd                    levelData+1+1+1+LEVEL_NUM_GHOSTS+1
+
 #define LEVEL_DATA_SIZE                 levelDataEnd-levelData
 
 ;;;============================================================================
@@ -460,6 +487,8 @@ levelGhostPicture:
 ;;;============================================================================
 
 levelInit:
+        XOR     A
+        LD      (levelIncrementIndex), A
         RET
 
 levelExit:

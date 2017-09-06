@@ -3,6 +3,8 @@
 ;;;============================================================================
 
 boardInit:
+        LD      A, 1
+        LD      (boardMoveIncrement), A
         RET
 
 boardExit:
@@ -736,7 +738,12 @@ boardMoveDirection:
         LD      A, H
         ADC     A, 0
         LD      H, A
+        PUSH    BC
+        LD      A, BOARD_MOVE_INCREMENT
+        LD      B, A
         CALL    boardMoveDirection_jumpHL
+        DJNZ    $-3
+        POP     BC
         POP     HL
         RET
         ;;
@@ -1292,6 +1299,8 @@ boardGetSpriteLocationData:
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////
 ;;;============================================================================
 
+#define BOARD_MOVE_INCREMENT    2
+
 #define BOARD_DIRECTION_UP      0
 #define BOARD_DIRECTION_RIGHT   1
 #define BOARD_DIRECTION_DOWN    2
@@ -1329,6 +1338,15 @@ boardGetSpriteLocationData:
 ;;; VARIABLE DATA /////////////////////////////////////////////////////////////
 ;;;============================================================================
 
+boardPretest:
+        .dw     boardArray
+        .dw     boardSpriteCount
+        .dw     boardSprites
+        .dw     boardTouchedCellCount
+        .dw     boardTouchedCells
+        .dw     boardMoveIncrement
+        .dw     boardDataEnd
+
 #define BOARD_ARRAY_SIZE        BOARD_NUM_ROWS * BOARD_NUM_COLUMNS
 #define BOARD_SPRITE_COUNT_SIZE 1
 #define BOARD_SPRITE_SIZE       1 + 1 + 2
@@ -1339,13 +1357,24 @@ boardGetSpriteLocationData:
 #define BOARD_SPRITE_PICTURE    2
 
 #define boardArray              boardData
-#define boardSpriteCount        boardArray + BOARD_ARRAY_SIZE
-#define boardSprites            boardSpriteCount + BOARD_SPRITE_COUNT_SIZE
-#define boardTouchedCellCount   boardSprites + BOARD_SPRITES_SIZE
+#define boardSpriteCount        boardArray + (BOARD_ARRAY_SIZE)
+#define boardSprites            boardSpriteCount + (BOARD_SPRITE_COUNT_SIZE)
+#define boardTouchedCellCount   boardSprites + (BOARD_SPRITES_SIZE)
 #define boardTouchedCells       boardTouchedCellCount + 1
 
-#define boardDataEnd            boardTouchedCells + (2 * 20)
-#define BOARD_DATA_SIZE         boardDataEnd - boardData
+#define boardMoveIncrement      boardTouchedCells + 40
+#define boardDataEnd            boardMoveIncrement + 1
+
+#define BOARD_DATA_SIZE         boardDataEnd - (boardData)
+
+boardPosttest:
+        .dw     boardArray
+        .dw     boardSpriteCount
+        .dw     boardSprites
+        .dw     boardTouchedCellCount
+        .dw     boardTouchedCells
+        .dw     boardMoveIncrement
+        .dw     boardDataEnd
 
 ;;;============================================================================
 ;;; IMAGE DATA ////////////////////////////////////////////////////////////////
