@@ -18,6 +18,9 @@ levelPlay:
         ;;   <LCD> -- affected during play
         ;;
         PUSH    HL                             ; STACK: [PC HL]
+        LD      HL, LEVEL_TICKS                ; initialize level ticks, buffer
+        LD      (levelTicks), HL               ;
+        LD      (levelTicksBuffer), HL         ;
         LD      A, LEVEL_STATUS_PLAY           ; status = PLAY
         LD      (levelStatus), A               ;
         CALL    levelBoardSetup                ; setup board for level
@@ -28,28 +31,10 @@ levelPlay:
         CALL    screenUpdate                   ; flush to screen
         JR      levelPlay_skipWait             ; enter partway through loop
 levelPlay_loop:                                ;
-        ;;
-        ;; MORE CHEAP DEBUGGING: quit if timer overflowed.
-        ;;
-        CALL    timerGet                       ;
-        PUSH    DE                             ;
-        LD      DE, -LEVEL_TICKS               ;
-        ADD     HL, DE                         ;
-        POP     DE                             ;
-        JR      NC, levelPlay_debugSkip        ;
-        LD      A, LEVEL_STATUS_QUIT           ;
-        LD      (levelStatus), A
-levelPlay_debugSkip:                           ;
-        ;;
-        CALL    timerGet                       ; take time remaining mod 8
-;        LD      H, 0                           ;
-        LD      A, L                           ;
-        AND     7                              ;
-;        LD      L, A                           ;
-        CALL    timerSet                       ;
         CALL    timerWait                      ;
 levelPlay_skipWait:                            ;
-        LD      HL, LEVEL_TICKS                ;
+        LD      HL, (levelTicksBuffer)         ; HL = ticks buffer
+        LD      (levelTicks), HL               ; ticks = HL
         CALL    timerSet                       ;
         CALL    boardUpdate                    ; draw and flush board
         CALL    keyboardRead                   ; ACC = keypress
@@ -58,10 +43,29 @@ levelPlay_skipWait:                            ;
         CALL    levelGhostsUpdate              ; update ghosts
         CALL    levelWinCheck                  ; check for win
         CALL    levelGhostCollisionCheck       ; check for ghost collision
+        CALL    levelPlay_assertNoOverflow     ; quit if timer overflowed
         LD      A, (levelStatus)               ; repeat loop if still playing
         CP      LEVEL_STATUS_PLAY              ;
         JR      Z, levelPlay_loop              ;
         POP     HL                             ; STACK: [PC]
+        RET                                    ; return
+        ;;
+levelPlay_assertNoOverflow:
+        PUSH    DE                             ; STACK: [PC DE]
+        PUSH    HL                             ; STACK: [PC DE HL]
+        CALL    timerGet                       ; HL = timer value
+        LD      DE, (levelTicks)               ; subtract ticks from timer
+        OR      A                              ;
+        SBC     HL, DE                         ; carry if timer < ticks
+        CCF                                    ; carry if timer >= ticks
+        POP     HL                             ; STACK: [PC DE]
+        POP     DE                             ; STACK: [PC]
+        RET     NC                             ; return if no overflow
+        LD      A, LEVEL_STATUS_QUIT           ; otherwise, status = QUIT
+        LD      (levelStatus), A               ;
+        RET                                    ; return
+        ;;
+levelPlay_getLevelTicks:
         RET                                    ; return
 
 ;;;============================================================================
@@ -138,6 +142,15 @@ levelPlay_skipWait:                            ;
 ;;; iteration for two interrupt cycles instead of one seems like a reasonable
 ;;; game speed, and this could be achieved without ever changing the screen.asm
 ;;; code.
+;;;
+;;;
+;;; Tests indicate that a movement speed of 1 pixel per 6 interrupt cycles
+;;; looks pretty good.  However, updating the LCD every 6 interrupt cycles
+;;; causes Pacman and the ghosts to appear blurry when moving.  It seems that
+;;; the only way to cause sprites to move at this speed and prevent this
+;;; blurriness is to move the sprites in two-pixel increments.  This will
+;;; probably make the movement appear less smooth, but only a field test will
+;;; tell whether this is a good tradeoff.
 
 ;;;============================================================================
 ;;; HELPER ROUTINES ///////////////////////////////////////////////////////////
@@ -217,10 +230,6 @@ levelGhostsSetup:
 
 ;;; UPDATING...................................................................
 
-#define LEVEL_NUM_MOVE_INCREMENTS       4
-level_moveIncrements:
-        .db     1, 2, 3, 6
-
 levelHandleKeypress:
         ;; INPUT:
         ;;   ACC -- keypress
@@ -228,8 +237,10 @@ levelHandleKeypress:
         ;; OUTPUT:
         ;;   <level data> -- updated based on keypress
         ;;
-        CP      skMode
-        JR      Z, levelHandleKeypress_mode
+        CP      skAdd
+        JR      Z, levelHandleKeypress_add
+        CP      skSub
+        JR      Z, levelHandleKeypress_sub
         CP      skClear                        ; CLEAR dispatch
         JR      Z, levelHandleKeypress_clear   ;
         CP      skUp                           ; UP dispatch
@@ -242,23 +253,20 @@ levelHandleKeypress:
         JR      Z, levelHandleKeypress_left    ;
         RET                                    ; return
         ;;
-levelHandleKeypress_mode:
-        PUSH    DE
+levelHandleKeypress_add:
         PUSH    HL
-        LD      A, (levelIncrementIndex)
-        INC     A
-        AND     LEVEL_NUM_MOVE_INCREMENTS - 1
-        LD      (levelIncrementIndex), A
-        LD      HL, level_moveIncrements
-        LD      E, A
-        LD      D, 0
-        ADD     HL, DE
-        LD      A, (HL)
-        LD      (boardMoveIncrement), A
-        LD      A, (boardMoveIncrement)
-        LD      A, (boardDataEnd)
+        LD      HL, (levelTicksBuffer)
+        INC     HL
+        LD      (levelTicksBuffer), HL
         POP     HL
-        POP     DE
+        RET
+        ;;
+levelHandleKeypress_sub:
+        PUSH    HL
+        LD      HL, (levelTicksBuffer)
+        DEC     HL
+        LD      (levelTicksBuffer), HL
+        POP     HL
         RET
         ;;
 levelHandleKeypress_clear:
@@ -478,7 +486,9 @@ levelGhostPicture:
 #define levelGhostDirections            levelData+1+1+1
 
 #define levelIncrementIndex             levelData+1+1+1+LEVEL_NUM_GHOSTS
-#define levelDataEnd                    levelData+1+1+1+LEVEL_NUM_GHOSTS+1
+#define levelTicks                      levelData+1+1+1+LEVEL_NUM_GHOSTS+1
+#define levelTicksBuffer                levelData+1+1+1+LEVEL_NUM_GHOSTS+1+2
+#define levelDataEnd                    levelData+1+1+1+LEVEL_NUM_GHOSTS+1+2+2
 
 #define LEVEL_DATA_SIZE                 levelDataEnd-levelData
 
@@ -487,8 +497,6 @@ levelGhostPicture:
 ;;;============================================================================
 
 levelInit:
-        XOR     A
-        LD      (levelIncrementIndex), A
         RET
 
 levelExit:

@@ -3,8 +3,6 @@
 ;;;============================================================================
 
 boardInit:
-        LD      A, 1
-        LD      (boardMoveIncrement), A
         RET
 
 boardExit:
@@ -1299,7 +1297,7 @@ boardGetSpriteLocationData:
 ;;; CONSTANTS /////////////////////////////////////////////////////////////////
 ;;;============================================================================
 
-#define BOARD_MOVE_INCREMENT    2
+#define BOARD_MOVE_INCREMENT    1
 
 #define BOARD_DIRECTION_UP      0
 #define BOARD_DIRECTION_RIGHT   1
@@ -1338,15 +1336,6 @@ boardGetSpriteLocationData:
 ;;; VARIABLE DATA /////////////////////////////////////////////////////////////
 ;;;============================================================================
 
-boardPretest:
-        .dw     boardArray
-        .dw     boardSpriteCount
-        .dw     boardSprites
-        .dw     boardTouchedCellCount
-        .dw     boardTouchedCells
-        .dw     boardMoveIncrement
-        .dw     boardDataEnd
-
 #define BOARD_ARRAY_SIZE        BOARD_NUM_ROWS * BOARD_NUM_COLUMNS
 #define BOARD_SPRITE_COUNT_SIZE 1
 #define BOARD_SPRITE_SIZE       1 + 1 + 2
@@ -1362,19 +1351,10 @@ boardPretest:
 #define boardTouchedCellCount   boardSprites + (BOARD_SPRITES_SIZE)
 #define boardTouchedCells       boardTouchedCellCount + 1
 
-#define boardMoveIncrement      boardTouchedCells + 40
+#define boardMoveIncrement      boardTouchedCells + (2 * 20)
 #define boardDataEnd            boardMoveIncrement + 1
 
 #define BOARD_DATA_SIZE         boardDataEnd - (boardData)
-
-boardPosttest:
-        .dw     boardArray
-        .dw     boardSpriteCount
-        .dw     boardSprites
-        .dw     boardTouchedCellCount
-        .dw     boardTouchedCells
-        .dw     boardMoveIncrement
-        .dw     boardDataEnd
 
 ;;;============================================================================
 ;;; IMAGE DATA ////////////////////////////////////////////////////////////////
