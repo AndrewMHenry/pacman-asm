@@ -302,6 +302,20 @@ boardGetDotCount:
         CALL    boardCountCellValue  ; ACC = count of DOTs in board
         RET                          ; return
 
+boardSetSpritePicture:
+        ;; INPUT:
+        ;;   ACC -- sprite ID
+        ;;   HL -- base of new picture for sprite
+        ;;
+        ;; OUTPUT:
+        ;;   (board data) -- sprite picture updated
+        ;;
+        PUSH    HL
+        CALL    boardGetSpritePointer
+        CALL    board_setSpritePicture
+        POP     HL
+        RET
+
 ;;;============================================================================
 ;;; UPDATING INTERFACE ////////////////////////////////////////////////////////
 ;;;============================================================================
