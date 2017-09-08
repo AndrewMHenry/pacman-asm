@@ -111,7 +111,7 @@ boardStageSprite:
         CALL    boardSetSpriteCell              ; set cell to D, E
         LD      BC, 0                           ; set offsets to 0, 0
         CALL    boardSetSpriteOffsets           ;
-        CALL    boardSetSpritePicture           ; set picture to HL
+        CALL    board_setSpritePicture          ; set picture to HL
         POP     IX                              ; STACK: [PC BC]
         POP     BC                              ; STACK: [PC]
         RET                                     ; return
@@ -689,7 +689,7 @@ boardSetSpriteLocation:
         LD      (IX+BOARD_SPRITE_ROW), D        ; set row
         RET                                     ; return
 
-boardSetSpritePicture:
+board_setSpritePicture:
         ;; INPUT:
         ;;   IX -- sprite pointer
         ;;   HL -- base of picture for sprite
