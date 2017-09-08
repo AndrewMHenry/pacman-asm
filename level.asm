@@ -167,7 +167,7 @@ levelBoardSetup:
         LD      HL, levelWallMaps            ; stage the wall map
         CALL    boardStageWallMap            ;
         LD      DE, LEVEL_PACMAN_START_CELL  ; stage Pacman on the board
-        LD      HL, levelPacmanPicture       ;
+        CALL    levelGetPacmanPicture        ;
         CALL    boardStageSprite             ;
         CALL    boardStageEmptyCell          ; (and stage empty cell there)
         LD      B, LEVEL_NUM_GHOSTS          ; B = number of ghosts
@@ -276,22 +276,22 @@ levelHandleKeypress_clear:
         ;;
 levelHandleKeypress_up:
         LD      A, BOARD_DIRECTION_UP          ; next direction = UP
-        LD      (levelPacmanNextDirection), A  ;
+        CALL    levelSetPacmanNextDirection    ;
         RET                                    ; return
         ;;
 levelHandleKeypress_right:
         LD      A, BOARD_DIRECTION_RIGHT       ; next direction = RIGHT
-        LD      (levelPacmanNextDirection), A  ;
+        CALL    levelSetPacmanNextDirection    ;
         RET                                    ; return
         ;;
 levelHandleKeypress_down:
         LD      A, BOARD_DIRECTION_DOWN        ; next direction = DOWN
-        LD      (levelPacmanNextDirection), A  ;
+        CALL    levelSetPacmanNextDirection    ;
         RET                                    ; return
         ;;
 levelHandleKeypress_left:
         LD      A, BOARD_DIRECTION_LEFT        ; next direction = LEFT
-        LD      (levelPacmanNextDirection), A  ;
+        CALL    levelSetPacmanNextDirection    ;
         RET                                    ; return
 
 levelPacmanUpdate:
@@ -302,18 +302,18 @@ levelPacmanUpdate:
         ;;   <board data> -- Pacman changed on board
         ;;
         PUSH    DE                             ; STACK: [PC DE]
-        LD      A, (levelPacmanNextDirection)  ; D = next direction
+        CALL    levelGetPacmanNextDirection    ; D = next direction
         LD      D, A                           ;
         LD      A, LEVEL_PACMAN_ID             ; check move in next direction
         CALL    boardCheckMoveSprite           ;
         JR      C, levelPacmanUpdate_skip      ; if allowed:
         LD      A, D                           ;     direction = next direction
-        LD      (levelPacmanDirection), A      ;
+        CALL    levelSetPacmanDirection        ;
         LD      A, LEVEL_PACMAN_ID             ;     move in new direction
         CALL    boardMoveSprite                ;
         JR      levelPacmanUpdate_return       ;     return
 levelPacmanUpdate_skip:                        ; else:
-        LD      A, (levelPacmanDirection)      ;
+        CALL    levelGetPacmanDirection        ;
         LD      D, A                           ;
         LD      A, LEVEL_PACMAN_ID             ;     try current direction
         CALL    boardCheckMoveSprite           ;
@@ -324,6 +324,42 @@ levelPacmanUpdate_return:                      ;
         CALL    boardSpriteCollectItems        ;
         POP     DE                             ; STACK: [PC]
         RET                                    ; return
+        ;;
+levelGetPacmanDirection:
+        LD      A, (levelPacmanDirection)
+        RET
+        ;;
+levelSetPacmanDirection:
+        PUSH    HL
+        LD      (levelPacmanDirection), A
+        CALL    levelGetPacmanPicture
+        LD      A, LEVEL_PACMAN_ID
+        CALL    boardSetSpritePicture
+        POP     HL
+        RET
+        ;;
+levelGetPacmanNextDirection:
+        LD      A, (levelPacmanNextDirection)
+        RET
+        ;;
+levelSetPacmanNextDirection:
+        LD      (levelPacmanNextDirection), A
+        RET
+        ;;
+levelGetPacmanPicture:
+        PUSH    DE
+        CALL    levelGetPacmanDirection
+        ADD     A, A
+        LD      E, A
+        LD      D, 0
+        LD      HL, levelPacmanPictures
+        ADD     HL, DE
+        LD      A, (HL)
+        INC     HL
+        LD      H, (HL)
+        LD      L, A
+        POP     DE
+        RET
 
 levelGhostsUpdate:
         ;; INPUT:
@@ -460,12 +496,42 @@ levelEmptyCells:
 ;;; SPRITE IMAGE DATA /////////////////////////////////////////////////////////
 ;;;============================================================================
 
-levelPacmanPicture:
+levelPacmanPictures:
+        .dw     levelPacmanPictureUp
+        .dw     levelPacmanPictureRight
+        .dw     levelPacmanPictureDown
+        .dw     levelPacmanPictureLeft
+        ;;
+levelPacmanPictureUp:
+        .db     10001000b       ; X   X
+        .db     11011000b       ; XX XX
+        .db     10111000b       ; X XXX
+        .db     11111000b       ; XXXXX
+        .db     01110000b       ;  XXX
+        .db     00000000b       ;
+        ;;
+levelPacmanPictureRight:
         .db     01111000b       ;  XXXX
         .db     11010000b       ; XX X
         .db     11100000b       ; XXX
         .db     11110000b       ; XXXX
         .db     01111000b       ;  XXXX
+        .db     00000000b       ;
+        ;;
+levelPacmanPictureDown:
+        .db     01110000b       ;  XXX
+        .db     11111000b       ; XXXXX
+        .db     10111000b       ; X XXX
+        .db     11011000b       ; XX XX
+        .db     10001000b       ; X   X
+        .db     00000000b       ;
+        ;;
+levelPacmanPictureLeft:
+        .db     11110000b       ; XXXX
+        .db     01011000b       ;  X XX
+        .db     00111000b       ;   XXX
+        .db     01111000b       ;  XXXX
+        .db     11110000b       ; XXXX
         .db     00000000b       ;
 
 levelGhostPicture:
