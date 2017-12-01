@@ -1,3 +1,53 @@
+;==============================================================================
+; LEVEL FORMAT ////////////////////////////////////////////////////////////////
+;==============================================================================
+
+; Currently, the specifications of the level arrangements are intertwined
+; with the level-playing logic in level.asm.  It would be better to have
+; a standardized format for specifying a level arrangement which would
+; be understood by this logic, allowing the level arrangements to be
+; developed and implemented separately.
+;
+; Previous formats have included separate fields to specify the various
+; components of a level arrangement.  For example, a bitmap has been used to
+; specify which cells of the board are walls, and then separate fields have
+; specified where empty cells or ghosts are to be staged.  This leads to a
+; fairly compact, but complicated, representation.
+;
+; An alternative approach which makes rather the opposite tradeoffs is to
+; use an ASCII-based grid representation.  For example, the standard first
+; level arrangement would be specified as
+;
+;       ################
+;       #o............o#
+;       #.#.#.####.#.#.#
+;       #.#.#.#gg#.#.#.#
+;       #.#.#.    .#.#.#
+;       #.#.#.#gg#.#.#.#
+;       #.#.#.####.#.#.#
+;       #o.....p......o#
+;       ################
+;
+; where
+;
+;       '#'     represents a wall cell,
+;       '.'     represents a small dot cell,
+;       'o'     represents a big dot cell,
+;       ' '     represents an empty cell,
+;       'g'     represents the starting position of a ghost, and
+;       'p'     represents the starting position of Pacman.
+;
+
+;       0000000000000000
+;       0o............o0
+;       0.0.0.0000.0.0.0
+;       0.0.0.0gg0.0.0.0
+;       0.0.0.    .0.0.0
+;       0.0.0.0gg0.0.0.0
+;       0.0.0.0000.0.0.0
+;       0o.....p......o0
+;       0000000000000000
+
 ;;;============================================================================
 ;;; INTERFACE /////////////////////////////////////////////////////////////////
 ;;;============================================================================
@@ -9,7 +59,7 @@
 
 levelPlay:
         ;; INPUT:
-        ;;   ACC -- number of level to play
+        ;;   C -- number of level to play
         ;;   <keyboard> -- accepts input from user
         ;;
         ;; OUTPUT:
