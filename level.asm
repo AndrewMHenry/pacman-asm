@@ -68,24 +68,16 @@ levelPlay:
         ;;   <LCD> -- affected during play
         ;;
         PUSH    HL                             ; STACK: [PC HL]
-        LD      HL, LEVEL_TICKS                ; initialize level ticks, buffer
-        LD      (levelTicks), HL               ;
-        LD      (levelTicksBuffer), HL         ;
-        LD      A, LEVEL_STATUS_PLAY           ; status = PLAY
-        LD      (levelStatus), A               ;
-        CALL    levelBoardSetup                ; setup board for level
+        CALL    levelStatusSetup               ; initialize status
+        CALL    levelClockSetup                ; initialize clock
         CALL    levelPacmanSetup               ; initialize Pacman
         CALL    levelGhostsSetup               ; initialize ghosts
+        CALL    levelBoardSetup                ; initialize board
         CALL    drawClearScreen                ; clear screen buffer
         CALL    boardDraw                      ; draw the board
         CALL    screenUpdate                   ; flush to screen
-        JR      levelPlay_skipWait             ; enter partway through loop
 levelPlay_loop:                                ;
-        CALL    timerWait                      ;
-levelPlay_skipWait:                            ;
-        LD      HL, (levelTicksBuffer)         ; HL = ticks buffer
-        LD      (levelTicks), HL               ; ticks = HL
-        CALL    timerSet                       ;
+        CALL    levelClockWait                 ; wait for level clock
         CALL    boardUpdate                    ; draw and flush board
         CALL    keyboardRead                   ; ACC = keypress
         CALL    levelHandleKeypress            ; handle keypress
@@ -201,51 +193,119 @@ levelPlay_getLevelTicks:
 ;;; blurriness is to move the sprites in two-pixel increments.  This will
 ;;; probably make the movement appear less smooth, but only a field test will
 ;;; tell whether this is a good tradeoff.
+;;;
+;;;
+;;; On closer inspection, the leading pixels on moving sprites (that is, the
+;;; forward-most pixels in the direction of movement) appear blurriest.  This
+;;; indicates that pixels are blurry because they are being cleared without
+;;; being given enough time to darken.  Therefore, a fix that does not involve
+;;; slowing down the game speed might be to turn on pixels before necessary
+;;; but leave them on until they would normally be turned off.
 
 ;;;============================================================================
 ;;; HELPER ROUTINES ///////////////////////////////////////////////////////////
 ;;;============================================================================
 
-;;; SETUP......................................................................
+;;; BOARD SETUP................................................................
 
 levelBoardSetup:
-        PUSH    BC                           ; STACK: [PC BC]
-        PUSH    DE                           ; STACK: [PC BC DE]
-        PUSH    HL                           ; STACK: [PC BC DE HL]
-        PUSH    IX                           ; STACK: [PC BC DE HL IX]
+        ;; INPUT:
+        ;;   C -- number of current level
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- initialized (via board interface) for level
+        ;;
         CALL    boardInitialize              ; prepare board for staging
+        CALL    levelStageWallMap            ; stage wall map on board
+        CALL    levelStagePacman             ; stage Pacman on board
+        CALL    levelStageGhosts             ; stage ghosts on board
+        CALL    levelStageEmptyCells         ; stage empty cells on board
+        CALL    boardDeploy                  ; prepare board for gameplay
+        RET                                  ; return
+
+levelStageWallMap:
+        ;; INPUT:
+        ;;   C -- level number
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- wall map for level staged
+        ;;
+        PUSH    HL                           ; STACK: [PC HL]
         LD      HL, levelWallMaps            ; stage the wall map
         CALL    boardStageWallMap            ;
+        POP     HL                           ; STACK: [PC]
+        RET                                  ; return
+
+levelStagePacman:
+        ;; INPUT:
+        ;;   C -- level number
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- Pacman staged on board
+        ;;
+        PUSH    DE                           ; STACK: [PC DE]
+        PUSH    HL                           ; STACK: [PC DE HL]
         LD      DE, LEVEL_PACMAN_START_CELL  ; stage Pacman on the board
         CALL    levelGetPacmanPicture        ;
         CALL    boardStageSprite             ;
         CALL    boardStageEmptyCell          ; (and stage empty cell there)
+        POP     HL                           ; STACK: [PC DE]
+        POP     DE                           ; STACK: [PC]
+        RET                                  ; return
+
+levelStageGhosts:
+        ;; INPUT:
+        ;;   C -- level number
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- ghosts staged on board
+        ;;
+        PUSH    BC                           ; STACK: [PC BC]
+        PUSH    DE                           ; STACK: [PC BC DE]
+        PUSH    HL                           ; STACK: [PC BC DE HL]
+        PUSH    IX                           ; STACK: [PC BC DE HL IX]
         LD      B, LEVEL_NUM_GHOSTS          ; B = number of ghosts
         LD      HL, levelGhostPicture        ; HL = ghost picture
         LD      IX, levelGhostStartCells     ; IX = base of ghost cell array
-levelBoardSetup_ghostLoop:                   ;
+levelStageGhosts_loop:                       ;
         LD      E, (IX)                      ; E = column
         INC     IX                           ;
         LD      D, (IX)                      ; D = row
         INC     IX                           ;
         CALL    boardStageEmptyCell          ; stage empty cell
         CALL    boardStageSprite             ; stage ghost sprite
-        DJNZ    levelBoardSetup_ghostLoop    ; repeat for each ghost
-        LD      B, LEVEL_NUM_EMPTY_CELLS     ; B = number of empty cells
-        LD      HL, levelEmptyCells          ; HL = empty cell array base
-levelBoardSetup_emptyLoop:                   ;
-        LD      E, (HL)                      ; E = cell-wise column
-        INC     HL                           ;
-        LD      D, (HL)                      ; D = cell-wise row
-        INC     HL                           ;
-        CALL    boardStageEmptyCell          ; stage empty cell
-        DJNZ    levelBoardSetup_emptyLoop    ; repeat for each empty cell
-        CALL    boardDeploy                  ; prepare board for gameplay
+        DJNZ    levelStageGhosts_loop        ; repeat for each ghost
         POP     IX                           ; STACK: [PC BC DE HL]
         POP     HL                           ; STACK: [PC BC DE]
         POP     DE                           ; STACK: [PC BC]
         POP     BC                           ; STACK: [PC]
         RET                                  ; return
+
+levelStageEmptyCells:
+        ;; INPUT:
+        ;;   C -- level number
+        ;;
+        ;; OUTPUT:
+        ;;   <board data> -- empty cells staged on board
+        ;;
+        PUSH    BC                           ; STACK: [PC BC]
+        PUSH    DE                           ; STACK: [PC BC DE]
+        PUSH    HL                           ; STACK: [PC BC DE HL]
+        LD      B, LEVEL_NUM_EMPTY_CELLS     ; B = number of empty cells
+        LD      HL, levelEmptyCells          ; HL = empty cell array base
+levelStageEmptyCells_loop:                   ;
+        LD      E, (HL)                      ; E = cell-wise column
+        INC     HL                           ;
+        LD      D, (HL)                      ; D = cell-wise row
+        INC     HL                           ;
+        CALL    boardStageEmptyCell          ; stage empty cell
+        DJNZ    levelStageEmptyCells_loop    ; repeat for each empty cell
+        POP     HL                           ; STACK: [PC BC DE]
+        POP     DE                           ; STACK: [PC BC]
+        POP     BC                           ; STACK: [PC]
+        RET                                  ; return
+
+;;; LEVEL SPRITE SETUP.........................................................
 
 levelPacmanSetup:
         ;; INPUT:
@@ -276,6 +336,60 @@ levelGhostsSetup:
         POP     HL                             ; STACK: [PC BC DE]
         POP     DE                             ; STACK: [PC BC]
         POP     BC                             ; STACK: [PC]
+        RET                                    ; return
+
+;;; LEVEL STATUS...............................................................
+
+levelStatusSetup:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <level status data> -- initialized for level
+        ;;
+        LD      A, LEVEL_STATUS_PLAY           ; status = PLAY
+        LD      (levelStatus), A               ;
+        RET                                    ; return
+
+;;; LEVEL CLOCK................................................................
+
+levelClockSetup:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <level clock data> -- initialized for level
+        ;;
+        PUSH    HL                             ; STACK: [PC HL]
+        LD      HL, LEVEL_TICKS                ; initialize level ticks, buffer
+        LD      (levelTicks), HL               ;
+        LD      (levelTicksBuffer), HL         ;
+        XOR     A                              ; reset cycle flag
+        LD      (levelCycleFlag), A            ;
+        POP     HL                             ; STACK: [PC]
+        RET                                    ; return
+
+levelClockWait:
+        ;; INPUT:
+        ;;   <none>
+        ;;
+        ;; OUTPUT:
+        ;;   <level clock data> -- possibly updated
+        ;;
+        PUSH    HL                             ; STACK: [PC HL]
+        LD      A, (levelCycleFlag)            ; if not in cycle:
+        OR      A                              ;
+        JR      NZ, levelClockWait_skip        ;
+        LD      HL, 1                          ;     set timer to small value
+        CALL    timerSet                       ;
+levelClockWait_skip:                           ;
+        CALL    timerWait                      ; wait for timer
+        LD      HL, (levelTicksBuffer)         ; apply buffered tick count
+        LD      (levelTicks), HL               ;
+        CALL    timerSet                       ; set timer for new cycle
+        LD      A, 1                           ; set cycle flag
+        LD      (levelCycleFlag), A            ;
+        POP     HL                             ; STACK: [PC]
         RET                                    ; return
 
 ;;; UPDATING...................................................................
@@ -601,7 +715,8 @@ levelGhostPicture:
 #define levelPacmanNextDirection        levelData+1+1
 #define levelGhostDirections            levelData+1+1+1
 
-#define levelIncrementIndex             levelData+1+1+1+LEVEL_NUM_GHOSTS
+;;#define levelIncrementIndex             levelData+1+1+1+LEVEL_NUM_GHOSTS
+#define levelCycleFlag                  levelData+1+1+1+LEVEL_NUM_GHOSTS
 #define levelTicks                      levelData+1+1+1+LEVEL_NUM_GHOSTS+1
 #define levelTicksBuffer                levelData+1+1+1+LEVEL_NUM_GHOSTS+1+2
 #define levelDataEnd                    levelData+1+1+1+LEVEL_NUM_GHOSTS+1+2+2
